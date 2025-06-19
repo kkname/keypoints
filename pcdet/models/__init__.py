@@ -22,12 +22,21 @@ def build_network(model_cfg, num_class, dataset):
 
 def load_data_to_gpu(batch_dict):
     for key, val in batch_dict.items():
+        if isinstance(val, np.ndarray):
+            print(f"Key: {key}, Type: {val.dtype}")
+
         if key == 'camera_imgs':
             batch_dict[key] = val.cuda()
         elif not isinstance(val, np.ndarray):
             continue
         elif key in ['frame_id', 'metadata', 'calib', 'image_paths','ori_shape','img_process_infos']:
             continue
+        elif key == 'sample_idx':
+            # 确保sample_idx是整数类型
+            if isinstance(val, np.ndarray) and val.dtype.kind in ['U', 'S']:
+                batch_dict[key] = torch.tensor([int(x) for x in val]).int().cuda()
+            else:
+                batch_dict[key] = torch.tensor(val).int().cuda()
         elif key in ['images']:
             batch_dict[key] = kornia.image_to_tensor(val).float().cuda().contiguous()
         elif key in ['image_shape']:

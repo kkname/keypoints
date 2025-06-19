@@ -72,39 +72,38 @@ class WaymoDataset(DatasetTemplate):
         self.seq_name_to_infos = self.include_waymo_data(mode)
 
     def include_waymo_data(self, mode):
-        self.logger.info('Loading Waymo dataset')
-        waymo_infos = []
-        seq_name_to_infos = {}
+         self.logger.info('Loading Waymo dataset')
+         waymo_infos = []
+         seq_name_to_infos = {}
 
-        num_skipped_infos = 0
-        for k in range(len(self.sample_sequence_list)):
-            sequence_name = os.path.splitext(self.sample_sequence_list[k])[0]
-            info_path = self.data_path / sequence_name / ('%s.pkl' % sequence_name)
-            info_path = self.check_sequence_name_with_all_version(info_path)
-            if not info_path.exists():
-                num_skipped_infos += 1
-                continue
-            with open(info_path, 'rb') as f:
-                infos = pickle.load(f)
-                waymo_infos.extend(infos)
+         num_skipped_infos = 0
+         for k in range(len(self.sample_sequence_list)):
+             sequence_name = os.path.splitext(self.sample_sequence_list[k])[0]
+             info_path = self.data_path / sequence_name / ('%s.pkl' % sequence_name)
+             info_path = self.check_sequence_name_with_all_version(info_path)
+             if not info_path.exists():
+                 num_skipped_infos += 1
+                 continue
+             with open(info_path, 'rb') as f:
+                 infos = pickle.load(f)
+                 waymo_infos.extend(infos)
 
-            seq_name_to_infos[infos[0]['point_cloud']['lidar_sequence']] = infos
+             seq_name_to_infos[infos[0]['point_cloud']['lidar_sequence']] = infos
 
-        self.infos.extend(waymo_infos[:])
-        self.logger.info('Total skipped info (%s) %s' % (mode, num_skipped_infos))
-        self.logger.info('Total samples for Waymo dataset (%s): %d' % (mode, len(waymo_infos)))
+         self.infos.extend(waymo_infos[:])
+         self.logger.info('Total skipped info (%s) %s' % (mode, num_skipped_infos))
+         self.logger.info('Total samples for Waymo dataset (%s): %d' % (mode, len(waymo_infos)))
 
-        if self.dataset_cfg.SAMPLED_INTERVAL[mode] > 1:
-            sampled_waymo_infos = []
-            for k in range(0, len(self.infos), self.dataset_cfg.SAMPLED_INTERVAL[mode]):
-                sampled_waymo_infos.append(self.infos[k])
-            self.infos = sampled_waymo_infos
-            self.logger.info('Total sampled samples for Waymo dataset: %d' % len(self.infos))
-            
-        use_sequence_data = self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED
-        if not use_sequence_data:
-            seq_name_to_infos = None 
-        return seq_name_to_infos
+         if self.dataset_cfg.SAMPLED_INTERVAL[mode] > 1:
+             sampled_waymo_infos = []
+             for k in range(0, len(self.infos), self.dataset_cfg.SAMPLED_INTERVAL[mode]):
+                 sampled_waymo_infos.append(self.infos[k])
+             self.infos = sampled_waymo_infos
+             self.logger.info('Total sampled samples for Waymo dataset: %d' % len(self.infos))
+         use_sequence_data = self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED
+         if not use_sequence_data:
+             seq_name_to_infos = None
+         return seq_name_to_infos
 
     def load_pred_boxes_to_dict(self, pred_boxes_path):
         self.logger.info(f'Loading and reorganizing pred_boxes to dict from path: {pred_boxes_path}')
@@ -209,18 +208,42 @@ class WaymoDataset(DatasetTemplate):
         return all_sequences_infos
 
     def get_lidar(self, sequence_name, sample_idx):
-        lidar_file = self.data_path / sequence_name / ('%04d.npy' % sample_idx)
-        point_features = np.load(lidar_file)  # (N, 7): [x, y, z, intensity, elongation, NLZ_flag]
+        """读取点云数据"""
+        formatted_idx = f'{int(sample_idx):06d}'
+        lidar_file = self.root_path / 'points' / f'{formatted_idx}.bin'
+        assert lidar_file.exists(), f'Point cloud file not found: {lidar_file}'
+        points = np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 4)
+        return points
+    # def get_lidar(self, sequence_name, sample_idx):
+    #     """
+    #     Args:
+    #         sequence_name: 文件名（如 '002940'）
+    #         sample_idx: 序号（在这里不会用到）
+    #     Returns:
+    #         points: (N, 4) 点云数据 [x, y, z, intensity]
+    #     """
+    #     lidar_file = self.data_path / f'{sequence_name}.bin'
+    #     try:
+    #         points = np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 4)
+    #         return points
+    #     except Exception as e:
+    #         print(f'Error loading point cloud file: {lidar_file}')
+    #         print(f'Error message: {str(e)}')
+    #         return np.zeros((1, 4), dtype=np.float32)
 
-        points_all, NLZ_flag = point_features[:, 0:5], point_features[:, 5]
-        if not self.dataset_cfg.get('DISABLE_NLZ_FLAG_ON_POINTS', False):
-            points_all = points_all[NLZ_flag == -1]
-        if self.dataset_cfg.get('POINTS_TANH_DIM', None) is None:
-            points_all[:, 3] = np.tanh(points_all[:, 3])
-        else:
-            for dim_idx in self.dataset_cfg.POINTS_TANH_DIM:
-                points_all[:, dim_idx] = np.tanh(points_all[:, dim_idx])
-        return points_all
+    # def get_lidar(self, sequence_name, sample_idx):
+    #     lidar_file = self.data_path / sequence_name / ('%04d.npy' % sample_idx)
+    #     point_features = np.load(lidar_file)  # (N, 7): [x, y, z, intensity, elongation, NLZ_flag]
+    #
+    #     points_all, NLZ_flag = point_features[:, 0:5], point_features[:, 5]
+    #     if not self.dataset_cfg.get('DISABLE_NLZ_FLAG_ON_POINTS', False):
+    #         points_all = points_all[NLZ_flag == -1]
+    #     if self.dataset_cfg.get('POINTS_TANH_DIM', None) is None:
+    #         points_all[:, 3] = np.tanh(points_all[:, 3])
+    #     else:
+    #         for dim_idx in self.dataset_cfg.POINTS_TANH_DIM:
+    #             points_all[:, dim_idx] = np.tanh(points_all[:, dim_idx])
+    #     return points_all
 
     @staticmethod
     def transform_prebox_to_current(pred_boxes3d, pose_pre, pose_cur):

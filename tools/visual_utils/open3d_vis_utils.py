@@ -193,12 +193,17 @@ def obtain_all_geometry(
     pts = open3d.geometry.PointCloud()
     pts.points = open3d.utility.Vector3dVector(points[:, :3])
 
+    # if point_colors is None:
+    #     z_colors = (points[:, 2] - points[:, 2].min()) / (points[:, 2].max() - points[:, 2].min())
+    #     pts.colors = o3d.utility.Vector3dVector(np.tile(z_colors[:, None], [1, 3]))
+    # else:
+    #     pts.colors = open3d.utility.Vector3dVector(point_colors)
+
     if point_colors is None:
-        z_colors = (points[:, 2] - points[:, 2].min()) / (points[:, 2].max() - points[:, 2].min())
-        pts.colors = o3d.utility.Vector3dVector(np.tile(z_colors[:, None], [1, 3]))
+        # 所有点都设置为白色
+        pts.colors = open3d.utility.Vector3dVector(np.zeros((points.shape[0], 3)))  # 纯白色 (1,1,1)
     else:
         pts.colors = open3d.utility.Vector3dVector(point_colors)
-
 
     all_geometry.append(pts)
 
@@ -242,7 +247,7 @@ def draw_scenes(
     vis.create_window(width=1920, height=1061)
 
     vis.get_render_option().point_size = 2.0
-    vis.get_render_option().background_color = np.zeros(3)
+    vis.get_render_option().background_color = np.ones(3)
 
     for geo in all_geometry:
         vis.add_geometry(geo)
@@ -324,7 +329,7 @@ def draw_box(gt_boxes, color=(0, 1, 0), ref_labels=None, score=None, angle=False
     return all_geo
 
 
-def draw_human(keypoints, color=( .8, .1, .1)):
+def draw_human(keypoints, color=(0.333, 0.333, 1.0)):
     all_geo = []
 
     for points in keypoints:
@@ -348,7 +353,7 @@ def draw_human(keypoints, color=( .8, .1, .1)):
         # vis.add_geometry(line_set)
 
         line_mesh = LineMesh(points, lines, colors, radius=0.02)
-        # line_mesh.add_line(vis)
+        #line_mesh.add_line(vis)
 
         for cylinder in line_mesh.cylinder_segments:
             all_geo.append(cylinder)

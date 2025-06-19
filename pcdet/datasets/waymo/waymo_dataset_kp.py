@@ -88,100 +88,226 @@ class WaymoDatasetKP(WaymoDataset):
                 gt_boxes: optional, (N, 7 + C) [x, y, z, dx, dy, dz, heading, ...]
                 gt_names: optional, (N), string
                 ...
-
         Returns:
             data_dict:
                 frame_id: string
                 points: (N, 3 + C_in)
                 gt_boxes: optional, (N, 7 + C) [x, y, z, dx, dy, dz, heading, ...]
-                gt_names: optional, (N), string
                 use_lead_xyz: bool
                 voxels: optional (num_voxels, max_points_per_voxel, 3 + C)
                 voxel_coords: optional (num_voxels, 3)
                 voxel_num_points: optional (num_voxels)
                 ...
         """
+        # 保存frame_id，因为这是字符串类型
+        frame_id = data_dict.get('frame_id', None)
 
+        # 设置雷达增强矩阵
         data_dict = self.set_lidar_aug_matrix(data_dict)
 
-        class_names = self.actual_class_name()
-        if self.dataset_cfg.get("LABEL_MAPPING", None):
-            # If the label has been changed
-            # Update class_names for this instance
-            out = []
-            for name in data_dict['gt_names']:
-                if name in self.dataset_cfg['LABEL_MAPPING']['STRATEGY'].keys():
-                    out.append(self.dataset_cfg['LABEL_MAPPING']['STRATEGY'][name])
-                else:
-                    out.append(name)
-            data_dict['gt_names'] = np.array(out)
-
-        if data_dict.get('gt_boxes', None) is not None:
-            selected = common_utils.keep_arrays_by_name(data_dict['gt_names'], class_names)
-            data_dict['gt_boxes'] = data_dict['gt_boxes'][selected]
-            data_dict['gt_names'] = data_dict['gt_names'][selected]
-            gt_classes = np.array([class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
-            gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
-            data_dict['gt_boxes'] = gt_boxes
-
-            if data_dict.get('gt_boxes2d', None) is not None:
-                data_dict['gt_boxes2d'] = data_dict['gt_boxes2d'][selected]
-
+        # 处理点云数据（这部分必须保留，因为点云数据是必需的）
         if data_dict.get('points', None) is not None:
             data_dict = self.point_feature_encoder.forward(data_dict)
 
+        # 推理模式下的处理
+        if self.inference_mode:
+            # 确保gt_boxes和gt_names是空数组但格式正确
+            if 'gt_boxes' in data_dict:
+                gt_boxes = data_dict['gt_boxes']
+                if len(gt_boxes) == 0:
+                    # 添加一个空的类别列
+                    gt_boxes = np.zeros((0, 8), dtype=np.float32)
+                    data_dict['gt_boxes'] = gt_boxes
+        else:
+            # 训练/评估模式的处理
+            class_names = self.actual_class_name()
+            if self.dataset_cfg.get("LABEL_MAPPING", None):
+                out = []
+                for name in data_dict['gt_names']:
+                    if name in self.dataset_cfg['LABEL_MAPPING']['STRATEGY'].keys():
+                        out.append(self.dataset_cfg['LABEL_MAPPING']['STRATEGY'][name])
+                    else:
+                        out.append(name)
+                data_dict['gt_names'] = np.array(out)
+
+            if data_dict.get('gt_boxes', None) is not None:
+                selected = common_utils.keep_arrays_by_name(data_dict['gt_names'], class_names)
+                data_dict['gt_boxes'] = data_dict['gt_boxes'][selected]
+                data_dict['gt_names'] = data_dict['gt_names'][selected]
+                gt_classes = np.array([class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
+                gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
+                data_dict['gt_boxes'] = gt_boxes
+
+                if data_dict.get('gt_boxes2d', None) is not None:
+                    data_dict['gt_boxes2d'] = data_dict['gt_boxes2d'][selected]
+
+        # 数据处理（这部分必须保留，因为它处理点云数据）
         data_dict = self.data_processor.forward(
             data_dict=data_dict
         )
 
+        # 移除不需要的字段
         data_dict.pop('gt_names', None)
 
+        # 确保frame_id保留（因为它是字符串类型）
+        if frame_id is not None:
+            data_dict['frame_id'] = frame_id
+
         return data_dict
+    # def prepare_data(self, data_dict):
+    #     """
+    #     Args:
+    #         data_dict:
+    #             points: optional, (N, 3 + C_in)
+    #             gt_boxes: optional, (N, 7 + C) [x, y, z, dx, dy, dz, heading, ...]
+    #             gt_names: optional, (N), string
+    #             ...
+    #
+    #     Returns:
+    #         data_dict:
+    #             frame_id: string
+    #             points: (N, 3 + C_in)
+    #             gt_boxes: optional, (N, 7 + C) [x, y, z, dx, dy, dz, heading, ...]
+    #             gt_names: optional, (N), string
+    #             use_lead_xyz: bool
+    #             voxels: optional (num_voxels, max_points_per_voxel, 3 + C)
+    #             voxel_coords: optional (num_voxels, 3)
+    #             voxel_num_points: optional (num_voxels)
+    #             ...
+    #     """
+    #
+    #     data_dict = self.set_lidar_aug_matrix(data_dict)
+    #
+    #     class_names = self.actual_class_name()
+    #     if self.dataset_cfg.get("LABEL_MAPPING", None):
+    #         # If the label has been changed
+    #         # Update class_names for this instance
+    #         out = []
+    #         for name in data_dict['gt_names']:
+    #             if name in self.dataset_cfg['LABEL_MAPPING']['STRATEGY'].keys():
+    #                 out.append(self.dataset_cfg['LABEL_MAPPING']['STRATEGY'][name])
+    #             else:
+    #                 out.append(name)
+    #         data_dict['gt_names'] = np.array(out)
+    #
+    #     if data_dict.get('gt_boxes', None) is not None:
+    #         selected = common_utils.keep_arrays_by_name(data_dict['gt_names'], class_names)
+    #         data_dict['gt_boxes'] = data_dict['gt_boxes'][selected]
+    #         data_dict['gt_names'] = data_dict['gt_names'][selected]
+    #         gt_classes = np.array([class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
+    #         gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
+    #         data_dict['gt_boxes'] = gt_boxes
+    #
+    #         if data_dict.get('gt_boxes2d', None) is not None:
+    #             data_dict['gt_boxes2d'] = data_dict['gt_boxes2d'][selected]
+    #
+    #     if data_dict.get('points', None) is not None:
+    #         data_dict = self.point_feature_encoder.forward(data_dict)
+    #
+    #     data_dict = self.data_processor.forward(
+    #         data_dict=data_dict
+    #     )
+    #
+    #     data_dict.pop('gt_names', None)
+    #
+    #     return data_dict
 
     def include_waymo_data(self, mode, keypoints_only=True):
         self.logger.info('Loading Waymo dataset KP')
         waymo_infos = []
         seq_name_to_infos = {}
 
-        num_skipped_infos = 0
-        for k in range(len(self.sample_sequence_list)):
-            sequence_name = os.path.splitext(self.sample_sequence_list[k])[0]
-            info_path = self.data_path / sequence_name / ('%s.pkl' % sequence_name)
-            info_path = self.check_sequence_name_with_all_version(info_path)
-            if not info_path.exists():
-                num_skipped_infos += 1
-                continue
-            with open(info_path, 'rb') as f:
-                infos = pickle.load(f)
-                if keypoints_only:
-                    new_infos = []
-                    for info in infos:
-                        if len(info["annos"].keys()) != 11:  # Sequences that includes keypoints
-                            new_infos.append(info)
-                    infos = new_infos
-                waymo_infos.extend(infos)
-            
-            if len(infos) == 0:
-                num_skipped_infos += 1
-                continue
+        # 直接读取points目录下的所有.bin文件
+        points_dir = self.data_path  # 因为PROCESSED_DATA_TAG已经指向了'points'
+        self.logger.info(f'Looking for point cloud files in: {points_dir}')
 
-            seq_name_to_infos[infos[0]['point_cloud']['lidar_sequence']] = infos
+        # 从ImageSets/val.txt读取文件列表（如果存在）
+        if (self.root_path / 'ImageSets' / f'{self.split}.txt').exists():
+            self.logger.info(f'Reading sample list from {self.split}.txt')
+            sample_sequence_list = [x.strip() for x in
+                                    open(self.root_path / 'ImageSets' / f'{self.split}.txt').readlines()]
+        else:
+            # 否则直接读取所有.bin文件
+            self.logger.info('No split file found, reading all .bin files')
+            sample_sequence_list = [f.stem for f in points_dir.glob('*.bin')]
+
+        for sequence_name in sample_sequence_list:
+            # 为每个点云文件创建基本信息
+            info = {
+                'point_cloud': {
+                    'lidar_sequence': sequence_name,
+                    'sample_idx': sequence_name
+                },
+                'frame_id': sequence_name,
+                'pose': np.eye(4)  # 添加一个单位矩阵作为默认pose
+            }
+
+            if self.inference_mode:
+                # 添加空的标注信息，避免代码报错
+                info['annos'] = {
+                    'name': np.array([]),
+                    'keypoint_location': np.zeros((0, 14, 3)),
+                    'keypoint_visibility': np.zeros((0, 14)),
+                    'keypoint_mask': np.zeros((0, 14)),
+                    'gt_boxes_lidar': np.zeros((0, 7)),
+                    'keypoint_box_center': np.zeros((0, 3)),
+                    'keypoint_box_dimensions': np.zeros((0, 3)),
+                    'keypoint_box_heading_angles': np.zeros((0,)),
+                    'keypoint_box_name': np.array([]),
+                    'keypoint_box_speed_global': np.zeros((0, 2))
+                }
+
+            waymo_infos.append(info)
+            seq_name_to_infos[sequence_name] = [info]
 
         self.infos.extend(waymo_infos[:])
-        self.logger.info('Total skipped info (%s) %s' % (mode, num_skipped_infos))
-        self.logger.info('Total samples for Waymo dataset Keypoints (%s): %d' % (mode, len(waymo_infos)))
+        self.logger.info(f'Total samples for inference: {len(waymo_infos)}')
 
-        if self.dataset_cfg.SAMPLED_INTERVAL[mode] > 1:
-            sampled_waymo_infos = []
-            for k in range(0, len(self.infos), self.dataset_cfg.SAMPLED_INTERVAL[mode]):
-                sampled_waymo_infos.append(self.infos[k])
-            self.infos = sampled_waymo_infos
-            self.logger.info('Total sampled samples for Waymo dataset: %d' % len(self.infos))
-
-        use_sequence_data = self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED
-        if not use_sequence_data:
-            seq_name_to_infos = None 
         return seq_name_to_infos
+    # def include_waymo_data(self, mode, keypoints_only=True):
+    #     self.logger.info('Loading Waymo dataset KP')
+    #     waymo_infos = []
+    #     seq_name_to_infos = {}
+    #
+    #     num_skipped_infos = 0
+    #     for k in range(len(self.sample_sequence_list)):
+    #         sequence_name = os.path.splitext(self.sample_sequence_list[k])[0]
+    #         info_path = self.data_path / sequence_name / ('%s.pkl' % sequence_name)
+    #         info_path = self.check_sequence_name_with_all_version(info_path)
+    #         if not info_path.exists():
+    #             num_skipped_infos += 1
+    #             continue
+    #         with open(info_path, 'rb') as f:
+    #             infos = pickle.load(f)
+    #             if keypoints_only:
+    #                 new_infos = []
+    #                 for info in infos:
+    #                     if len(info["annos"].keys()) != 11:  # Sequences that includes keypoints
+    #                         new_infos.append(info)
+    #                 infos = new_infos
+    #             waymo_infos.extend(infos)
+    #
+    #         if len(infos) == 0:
+    #             num_skipped_infos += 1
+    #             continue
+    #
+    #         seq_name_to_infos[infos[0]['point_cloud']['lidar_sequence']] = infos
+    #
+    #     self.infos.extend(waymo_infos[:])
+    #     self.logger.info('Total skipped info (%s) %s' % (mode, num_skipped_infos))
+    #     self.logger.info('Total samples for Waymo dataset Keypoints (%s): %d' % (mode, len(waymo_infos)))
+    #
+    #     if self.dataset_cfg.SAMPLED_INTERVAL[mode] > 1:
+    #         sampled_waymo_infos = []
+    #         for k in range(0, len(self.infos), self.dataset_cfg.SAMPLED_INTERVAL[mode]):
+    #             sampled_waymo_infos.append(self.infos[k])
+    #         self.infos = sampled_waymo_infos
+    #         self.logger.info('Total sampled samples for Waymo dataset: %d' % len(self.infos))
+    #
+    #     use_sequence_data = self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED
+    #     if not use_sequence_data:
+    #         seq_name_to_infos = None
+    #     return seq_name_to_infos
 
     def get_sequence_data(self, info, points, sequence_name, sample_idx, sequence_cfg, load_pred_boxes=False):
         """
@@ -270,20 +396,31 @@ class WaymoDatasetKP(WaymoDataset):
     def __getitem__(self, index):
         if self._merge_all_iters_to_one_epoch:
             index = index % len(self.infos)
-
+        #print the type of frame_id and points
         info = copy.deepcopy(self.infos[index])
+        print("frame_id type:", type(info['frame_id']))
+
         pc_info = info['point_cloud']
         sequence_name = pc_info['lidar_sequence']
         sample_idx = pc_info['sample_idx']
+        if isinstance(sample_idx, str):
+            sample_idx = int(sample_idx)
+
         input_dict = {
             'sample_idx': sample_idx
         }
+
+        # 获取点云数据
         if self.use_shared_memory and index < self.shared_memory_file_limit:
             sa_key = f'{sequence_name}___{sample_idx}'
             points = SharedArray.attach(f"shm://{sa_key}").copy()
         else:
             points = self.get_lidar(sequence_name, sample_idx)
-
+        # 在获取points后打印类型
+        points[:,2]=points[:,2]+0.57 #将点云高度+0.6,为了适配自己的数据
+        print("points type:", type(points))
+        print("points dtype:", points.dtype)
+        # 处理序列配置
         if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED:
             points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels = self.get_sequence_data(
                 info, points, sequence_name, sample_idx, self.dataset_cfg.SEQUENCE_CONFIG,
@@ -303,87 +440,55 @@ class WaymoDatasetKP(WaymoDataset):
         })
 
         if self.inference_mode:
+            # 推理模式下，提供必要的空数组或默认值
+            dummy_boxes = np.zeros((0, 7), dtype=np.float32)  # 改为空数组
             input_dict.update({
-                'gt_names': np.array(["Pedestrian"]),
-                'gt_boxes': np.random.rand(1, 7),
-                'num_points_in_gt': np.array([505.]),
-                # Load keypoints
-                # 'keypoint_index': annos["keypoint_index"],
-                'keypoint_location': np.random.rand(1, 14, 3),
-                'keypoint_visibility': np.ones((1, 14)),
-                'keypoint_mask': np.ones((1, 14)),
-                # 'keypoint_dims': annos["keypoint_dims"],
-                # 'keypoint_has_batch_dimension': annos["keypoint_has_batch_dimension"],
-                # 'keypoint_box_center': annos["keypoint_box_center"],
-                # 'keypoint_box_size': annos["keypoint_box_size"],
-                # Corresponding box attributes if keypoint exists
-                # 'keypoint_box_name': annos["keypoint_box_name"],
-                # 'keypoint_box_difficulty': annos["keypoint_box_difficulty"],
-                # 'keypoint_box_dimensions': annos["keypoint_box_dimensions"],
-                # 'keypoint_box_location': annos["keypoint_box_location"],
-                # 'keypoint_box_heading_angles': annos["keypoint_box_heading_angles"],
-                # 'keypoint_box_obj_ids': annos["keypoint_box_obj_ids"],
-                # 'keypoint_box_tracking_difficulty': annos["keypoint_box_tracking_difficulty"],
-                # 'keypoint_box_num_points_in_gt': annos["keypoint_box_num_points_in_gt"],
-                # 'keypoint_box_speed_global': annos["keypoint_box_speed_global"],
-                # 'keypoint_box_accel_global': annos["keypoint_box_accel_global"],
+                'gt_names': np.array([], dtype=str),  # 空数组
+                'gt_boxes': dummy_boxes,
+                'keypoint_location': np.zeros((0, 14, 3), dtype=np.float32),
+                'keypoint_visibility': np.zeros((0, 14), dtype=np.float32),
+                'keypoint_mask': np.zeros((0, 14), dtype=np.float32),
             })
-
-        if not self.inference_mode and 'annos' in info:
+        elif 'annos' in info:
+            # 训练或评估模式的原有逻辑
             annos = info['annos']
             annos = common_utils.drop_info_with_name(annos, name='unknown', ignore_name="keypoint")
 
             # Override gt_boxes_lidar with keypoints only boxes
-            global_speed = np.pad(annos[
-                'keypoint_box_speed_global'], ((0, 0), (0, 1)), mode='constant', constant_values=0)  # (N, 3)
+            global_speed = np.pad(
+                annos['keypoint_box_speed_global'],
+                ((0, 0), (0, 1)),
+                mode='constant',
+                constant_values=0
+            )
             speed = np.dot(global_speed, np.linalg.inv(info['pose'][:3, :3].T))
             speed = speed[:, :2]
             gt_boxes_lidar = np.concatenate([
-                annos['keypoint_box_center'], annos['keypoint_box_dimensions'],
-                annos['keypoint_box_heading_angles'][..., np.newaxis], speed],
-                axis=1
-            )
+                annos['keypoint_box_center'],
+                annos['keypoint_box_dimensions'],
+                annos['keypoint_box_heading_angles'][..., np.newaxis],
+                speed
+            ], axis=1)
+
             if self.dataset_cfg.get('REMOVE_BOXES_WITHOUT_KEYPOINTS', False):
-                clean_points = self._remove_boxes_without_keypoints(input_dict['points'], gt_boxes_lidar, annos['gt_boxes_lidar'])
+                clean_points = self._remove_boxes_without_keypoints(
+                    input_dict['points'],
+                    gt_boxes_lidar,
+                    annos['gt_boxes_lidar']
+                )
                 input_dict['points'] = clean_points
-            # assert False, ([a for a in annos["gt_boxes_lidar"] if np.abs(a[:3] - gt_boxes_lidar[0][:3]).sum() <= 0.00001], gt_boxes_lidar)
+
             annos['gt_boxes_lidar'] = gt_boxes_lidar
 
-            if self.dataset_cfg.get('INFO_WITH_FAKELIDAR', False):
-                assert False, "Need to update keypoints"
-                gt_boxes_lidar = box_utils.boxes3d_kitti_fakelidar_to_lidar(annos['gt_boxes_lidar'])
-            else:
-                gt_boxes_lidar = annos['gt_boxes_lidar']
-
-            if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
-                assert gt_boxes_lidar.shape[-1] == 9
-            else:
+            if not self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
                 gt_boxes_lidar = gt_boxes_lidar[:, 0:7]
 
             input_dict.update({
                 'gt_names': annos['keypoint_box_name'],
                 'gt_boxes': gt_boxes_lidar,
-                'num_points_in_gt': annos.get('keypoint_box_num_points_in_gt', None),
-                # Load keypoints
-                # 'keypoint_index': annos["keypoint_index"],
                 'keypoint_location': annos["keypoint_location"],
                 'keypoint_visibility': annos["keypoint_visibility"],
                 'keypoint_mask': annos["keypoint_mask"],
-                # 'keypoint_dims': annos["keypoint_dims"],
-                # 'keypoint_has_batch_dimension': annos["keypoint_has_batch_dimension"],
-                # 'keypoint_box_center': annos["keypoint_box_center"],
-                # 'keypoint_box_size': annos["keypoint_box_size"],
-                # Corresponding box attributes if keypoint exists
-                # 'keypoint_box_name': annos["keypoint_box_name"],
-                # 'keypoint_box_difficulty': annos["keypoint_box_difficulty"],
-                # 'keypoint_box_dimensions': annos["keypoint_box_dimensions"],
-                # 'keypoint_box_location': annos["keypoint_box_location"],
-                # 'keypoint_box_heading_angles': annos["keypoint_box_heading_angles"],
-                # 'keypoint_box_obj_ids': annos["keypoint_box_obj_ids"],
-                # 'keypoint_box_tracking_difficulty': annos["keypoint_box_tracking_difficulty"],
-                # 'keypoint_box_num_points_in_gt': annos["keypoint_box_num_points_in_gt"],
-                # 'keypoint_box_speed_global': annos["keypoint_box_speed_global"],
-                # 'keypoint_box_accel_global': annos["keypoint_box_accel_global"],
             })
 
         data_dict = self.prepare_data(data_dict=input_dict)
@@ -391,6 +496,130 @@ class WaymoDatasetKP(WaymoDataset):
         data_dict.pop('num_points_in_gt', None)
 
         return data_dict
+    # def __getitem__(self, index):
+    #     if self._merge_all_iters_to_one_epoch:
+    #         index = index % len(self.infos)
+    #
+    #     info = copy.deepcopy(self.infos[index])
+    #     pc_info = info['point_cloud']
+    #     sequence_name = pc_info['lidar_sequence']
+    #     sample_idx = pc_info['sample_idx']
+    #     input_dict = {
+    #         'sample_idx': sample_idx
+    #     }
+    #     if self.use_shared_memory and index < self.shared_memory_file_limit:
+    #         sa_key = f'{sequence_name}___{sample_idx}'
+    #         points = SharedArray.attach(f"shm://{sa_key}").copy()
+    #     else:
+    #         points = self.get_lidar(sequence_name, sample_idx)
+    #
+    #     if self.dataset_cfg.get('SEQUENCE_CONFIG', None) is not None and self.dataset_cfg.SEQUENCE_CONFIG.ENABLED:
+    #         points, num_points_all, sample_idx_pre_list, poses, pred_boxes, pred_scores, pred_labels = self.get_sequence_data(
+    #             info, points, sequence_name, sample_idx, self.dataset_cfg.SEQUENCE_CONFIG,
+    #             load_pred_boxes=self.dataset_cfg.get('USE_PREDBOX', False)
+    #         )
+    #         input_dict['poses'] = poses
+    #         if self.dataset_cfg.get('USE_PREDBOX', False):
+    #             input_dict.update({
+    #                 'roi_boxes': pred_boxes,
+    #                 'roi_scores': pred_scores,
+    #                 'roi_labels': pred_labels,
+    #             })
+    #
+    #     input_dict.update({
+    #         'points': points,
+    #         'frame_id': info['frame_id'],
+    #     })
+    #
+    #     if self.inference_mode:
+    #         input_dict.update({
+    #             'gt_names': np.array(["Pedestrian"]),
+    #             'gt_boxes': np.random.rand(1, 7),
+    #             'num_points_in_gt': np.array([505.]),
+    #             # Load keypoints
+    #             # 'keypoint_index': annos["keypoint_index"],
+    #             'keypoint_location': np.random.rand(1, 14, 3),
+    #             'keypoint_visibility': np.ones((1, 14)),
+    #             'keypoint_mask': np.ones((1, 14)),
+    #             # 'keypoint_dims': annos["keypoint_dims"],
+    #             # 'keypoint_has_batch_dimension': annos["keypoint_has_batch_dimension"],
+    #             # 'keypoint_box_center': annos["keypoint_box_center"],
+    #             # 'keypoint_box_size': annos["keypoint_box_size"],
+    #             # Corresponding box attributes if keypoint exists
+    #             # 'keypoint_box_name': annos["keypoint_box_name"],
+    #             # 'keypoint_box_difficulty': annos["keypoint_box_difficulty"],
+    #             # 'keypoint_box_dimensions': annos["keypoint_box_dimensions"],
+    #             # 'keypoint_box_location': annos["keypoint_box_location"],
+    #             # 'keypoint_box_heading_angles': annos["keypoint_box_heading_angles"],
+    #             # 'keypoint_box_obj_ids': annos["keypoint_box_obj_ids"],
+    #             # 'keypoint_box_tracking_difficulty': annos["keypoint_box_tracking_difficulty"],
+    #             # 'keypoint_box_num_points_in_gt': annos["keypoint_box_num_points_in_gt"],
+    #             # 'keypoint_box_speed_global': annos["keypoint_box_speed_global"],
+    #             # 'keypoint_box_accel_global': annos["keypoint_box_accel_global"],
+    #         })
+    #
+    #     if not self.inference_mode and 'annos' in info:
+    #         annos = info['annos']
+    #         annos = common_utils.drop_info_with_name(annos, name='unknown', ignore_name="keypoint")
+    #
+    #         # Override gt_boxes_lidar with keypoints only boxes
+    #         global_speed = np.pad(annos[
+    #             'keypoint_box_speed_global'], ((0, 0), (0, 1)), mode='constant', constant_values=0)  # (N, 3)
+    #         speed = np.dot(global_speed, np.linalg.inv(info['pose'][:3, :3].T))
+    #         speed = speed[:, :2]
+    #         gt_boxes_lidar = np.concatenate([
+    #             annos['keypoint_box_center'], annos['keypoint_box_dimensions'],
+    #             annos['keypoint_box_heading_angles'][..., np.newaxis], speed],
+    #             axis=1
+    #         )
+    #         if self.dataset_cfg.get('REMOVE_BOXES_WITHOUT_KEYPOINTS', False):
+    #             clean_points = self._remove_boxes_without_keypoints(input_dict['points'], gt_boxes_lidar, annos['gt_boxes_lidar'])
+    #             input_dict['points'] = clean_points
+    #         # assert False, ([a for a in annos["gt_boxes_lidar"] if np.abs(a[:3] - gt_boxes_lidar[0][:3]).sum() <= 0.00001], gt_boxes_lidar)
+    #         annos['gt_boxes_lidar'] = gt_boxes_lidar
+    #
+    #         if self.dataset_cfg.get('INFO_WITH_FAKELIDAR', False):
+    #             assert False, "Need to update keypoints"
+    #             gt_boxes_lidar = box_utils.boxes3d_kitti_fakelidar_to_lidar(annos['gt_boxes_lidar'])
+    #         else:
+    #             gt_boxes_lidar = annos['gt_boxes_lidar']
+    #
+    #         if self.dataset_cfg.get('TRAIN_WITH_SPEED', False):
+    #             assert gt_boxes_lidar.shape[-1] == 9
+    #         else:
+    #             gt_boxes_lidar = gt_boxes_lidar[:, 0:7]
+    #
+    #         input_dict.update({
+    #             'gt_names': annos['keypoint_box_name'],
+    #             'gt_boxes': gt_boxes_lidar,
+    #             'num_points_in_gt': annos.get('keypoint_box_num_points_in_gt', None),
+    #             # Load keypoints
+    #             # 'keypoint_index': annos["keypoint_index"],
+    #             'keypoint_location': annos["keypoint_location"],
+    #             'keypoint_visibility': annos["keypoint_visibility"],
+    #             'keypoint_mask': annos["keypoint_mask"],
+    #             # 'keypoint_dims': annos["keypoint_dims"],
+    #             # 'keypoint_has_batch_dimension': annos["keypoint_has_batch_dimension"],
+    #             # 'keypoint_box_center': annos["keypoint_box_center"],
+    #             # 'keypoint_box_size': annos["keypoint_box_size"],
+    #             # Corresponding box attributes if keypoint exists
+    #             # 'keypoint_box_name': annos["keypoint_box_name"],
+    #             # 'keypoint_box_difficulty': annos["keypoint_box_difficulty"],
+    #             # 'keypoint_box_dimensions': annos["keypoint_box_dimensions"],
+    #             # 'keypoint_box_location': annos["keypoint_box_location"],
+    #             # 'keypoint_box_heading_angles': annos["keypoint_box_heading_angles"],
+    #             # 'keypoint_box_obj_ids': annos["keypoint_box_obj_ids"],
+    #             # 'keypoint_box_tracking_difficulty': annos["keypoint_box_tracking_difficulty"],
+    #             # 'keypoint_box_num_points_in_gt': annos["keypoint_box_num_points_in_gt"],
+    #             # 'keypoint_box_speed_global': annos["keypoint_box_speed_global"],
+    #             # 'keypoint_box_accel_global': annos["keypoint_box_accel_global"],
+    #         })
+    #
+    #     data_dict = self.prepare_data(data_dict=input_dict)
+    #     data_dict['metadata'] = info.get('metadata', info['frame_id'])
+    #     data_dict.pop('num_points_in_gt', None)
+    #
+    #     return data_dict
 
     def evaluation(self, det_annos, class_names, **kwargs):
         if 'annos' not in self.infos[0].keys():
