@@ -1,6 +1,8 @@
 from copy import deepcopy
 import torch
+from torch import nn
 from ..model_utils import model_nms_utils
+import spconv.pytorch as spconv
 
 from .voxelnext_head_kp import VoxelNeXtHeadKP, decode_bbox_and_keypoints_from_voxels_nuscenes
 
@@ -209,15 +211,42 @@ class VoxelNeXtHeadKPMerge(VoxelNeXtHeadKP):
         return ret_dict
 
     def forward(self, data_dict):
-        x = data_dict['encoded_spconv_tensor']
+        if 'spatial_features_2d' in data_dict:
+            # 如果是时序模型，直接使用融合后的2D特征
+            x_2d = data_dict['spatial_features_2d']
+            # 直接从data_dict中获取所有上下文信息
+            spatial_shape, batch_index, voxel_indices, spatial_indices, num_voxels = \
+                (x_2d.shape[2:], data_dict.get('batch_index'), data_dict['voxel_coords'],
+                 data_dict['voxel_coords'][:, 1:], data_dict['voxel_num_points'])
+        else:
+            # 如果是单帧模型，执行原始的3D转2D逻辑
+            x_3d_sparse = data_dict['encoded_spconv_tensor']
+            # 从3D稀疏张量中获取所有上下文信息
+            spatial_shape, batch_index, voxel_indices, spatial_indices, num_voxels = self._get_voxel_infos(x_3d_sparse)
+            # 将3D稀疏张量转换为2D密集BEV图
+            x_2d = x_3d_sparse
 
-        spatial_shape, batch_index, voxel_indices, spatial_indices, num_voxels = self._get_voxel_infos(x)
         self.forward_ret_dict['batch_index'] = batch_index
-
+        # x = data_dict['encoded_spconv_tensor']
+        #
+        # spatial_shape, batch_index, voxel_indices, spatial_indices, num_voxels = self._get_voxel_infos(x)
+        # self.forward_ret_dict['batch_index'] = batch_index
+        # x_2d = self.shared_conv(x_2d)
         # TODO: Merge Pedestrian and Cyclist into one class
         pred_dicts = []
         for head in self.heads_list:
-            pred_dicts.append(head(x))
+            pred_dicts.append(head(x_2d))
+
+        if self.training:
+            target_dict = self.assign_targets(
+                data_dict['gt_boxes'],
+                data_dict['keypoint_location'],
+                data_dict['keypoint_visibility'],
+                num_voxels,
+                spatial_indices,
+                spatial_shape
+            )
+            self.forward_ret_dict['target_dicts'] = target_dict
 
         self.forward_ret_dict['pred_dicts'] = pred_dicts
         self.forward_ret_dict['voxel_indices'] = voxel_indices

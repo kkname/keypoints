@@ -13,7 +13,6 @@ except:
 
 import numpy as np
 import torch
-import time
 
 from pcdet.config import cfg, cfg_from_yaml_file
 from pcdet.datasets import DatasetTemplate
@@ -80,44 +79,33 @@ def parse_config():
 def main():
     args, cfg = parse_config()
     logger = common_utils.create_logger()
-    logger.info('-----------------Continuous Playback Demo of OpenPCDet-------------------------')
-
+    logger.info('-----------------Quick Demo of OpenPCDet-------------------------')
     demo_dataset = DemoDataset(
         dataset_cfg=cfg.DATA_CONFIG, class_names=cfg.CLASS_NAMES, training=False,
         root_path=Path(args.data_path), ext=args.ext, logger=logger
     )
-    logger.info(f'Total number of frames to play: \t{len(demo_dataset)}')
+    logger.info(f'Total number of samples: \t{len(demo_dataset)}')
 
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=demo_dataset)
     model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=True)
     model.cuda()
     model.eval()
+    with torch.no_grad():
+        for idx, data_dict in enumerate(demo_dataset):
+            logger.info(f'Visualized sample index: \t{idx + 1}')
+            data_dict = demo_dataset.collate_batch([data_dict])
+            load_data_to_gpu(data_dict)
+            pred_dicts, _ = model.forward(data_dict)
 
-    # # --- 关键修改：使用我们新的播放器类 ---
-    # # 1. 在循环前初始化播放器
-    # visualizer = V.PlaybackVisualizer()
-    #
-    # with torch.no_grad():
-    #     for idx, data_dict in enumerate(demo_dataset):
-    #         logger.info(f'Processing frame index: \t{idx}')
-    #
-    #         data_dict = demo_dataset.collate_batch([data_dict])
-    #         load_data_to_gpu(data_dict)
-    #         pred_dicts, _ = model.forward(data_dict)
-    #
-    #         # 从batch中分离出点云和预测结果
-    #         points = data_dict['points'][:, 1:]  # 去掉batch_idx
-    #         pred_boxes = pred_dicts[0].get('pred_boxes', None)
-    #         pred_kps = pred_dicts[0].get('pred_kps', None)
-    #
-    #         # 2. 在循环中调用update方法更新画面
-    #         visualizer.update(points, pred_boxes, pred_kps)
-    #
-    #         time.sleep(0.1)  # 控制播放速度
-    #
-    # # 3. 播放结束后关闭窗口
-    # visualizer.close()
-    # logger.info('Playback done.')
+            V.draw_scenes(
+                points=data_dict['points'][:, 1:], ref_boxes=pred_dicts[0]['pred_boxes'],
+                ref_scores=pred_dicts[0]['pred_scores'], ref_labels=pred_dicts[0]['pred_labels']
+            )
+
+            if not OPEN3D_FLAG:
+                mlab.show(stop=True)
+
+    logger.info('Demo done.')
 
 
 if __name__ == '__main__':

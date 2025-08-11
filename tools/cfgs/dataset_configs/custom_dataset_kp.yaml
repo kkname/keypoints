@@ -1,74 +1,70 @@
-# /tools/cfgs/dataset_configs/custom_dataset_kp.yaml
+# /tools/cfgs/dataset_configs/custom_dataset_kp.yaml (Corrected Structure)
 
-# 关键：指向我们修改后的CustomDataset类
-# pcdet会根据这个名字在 pcdet/datasets/custom/custom_dataset.py 中找到 CustomDataset 类
-DATASET: 'CustomDataset'
-
-# 数据集根目录的路径，相对于 key-point/ 主目录
-# 例如，如果您的数据在 key-point/data/custom/，这里就写 'data/custom'
+DATASET: 'CustomDatasetKP'
 DATA_PATH: 'data/custom' # <-- 需要您修改
-
-# 点云文件的扩展名
 POINT_CLOUD_EXTENSION: .bin
-
-# 您要训练的物体类别
 CLASS_NAMES: ['Human']
-
-# 关键：定义您数据集中每个物体的关键点数量
 NUM_KEYPOINTS: 14
 
-# 定义处理的点云范围 [x_min, y_min, z_min, x_max, y_max, z_max]
-# 请根据您自己数据的坐标范围进行调整，这非常重要
+POINT_FEATURE_ENCODING:
+  encoding_type: 'absolute_coordinates_encoding'
+  used_feature_list: ['x', 'y', 'z', 'intensity']
+  src_feature_list: ['x', 'y', 'z', 'intensity']
+
+EVAL_METRIC: custom_kp
+
 POINT_CLOUD_RANGE: [-75.2, -75.2, -2, 75.2, 75.2, 4] # <-- 强烈建议您修改
 
-# 定义数据集划分，指向ImageSets文件夹下的文件名
 DATA_SPLIT:
     train: train
-    test: val # 如果您有验证集的话
+    test: val
 
-# 定义预处理后生成的infos.pkl文件的路径
-# 路径相对于 DATA_PATH
 INFO_PATH:
     train: [custom_infos_train.pkl]
     test: [custom_infos_val.pkl]
 
-# 定义数据增强和预处理流程
+# --- 新增：时序处理相关参数 ---
+SEQUENCE_LENGTH: 3  # 定义每个序列包含的帧数 (例如3帧)
+
+# 为了将不同帧的数据堆叠(stack)成一个张量，我们需要将它们填充到相同的大小
+# 您需要根据您数据集中最极端的情况来设定这两个值
+MAX_POINTS_PER_FRAME: 160000  # 数据集中单帧最多包含的点数
+MAX_PEOPLE_PER_FRAME: 4      # 数据集中单帧最多包含的人数
+# -------------------------------
+
+# --- 结构修正：DATA_PROCESSOR 只包含它自己的处理步骤 ---
 DATA_PROCESSOR:
-    # 过滤掉在POINT_CLOUD_RANGE范围之外的点和物体框
-    -   NAME: mask_points_and_boxes_outside_range
-        REMOVE_OUTSIDE_BOXES: True
+    - NAME: mask_points_and_boxes_outside_range
+      REMOVE_OUTSIDE_BOXES: True
 
-    # 打乱点的顺序，增加模型鲁棒性
-    -   NAME: shuffle_points
-        SHUFFLE_ENABLED: {
-            'train': True,
-            'test': False
-        }
+    - NAME: shuffle_points
+      SHUFFLE_ENABLED: {
+          'train': True,
+          'test': False
+      }
 
-    # 定义体素化参数，后续VFE模块会使用
-    -   NAME: transform_points_to_voxels
-        VOXEL_SIZE: [0.1, 0.1, 0.15] # <-- 体素大小，可以根据您的数据密度调整
-        MAX_POINTS_PER_VOXEL: 5
-        MAX_NUMBER_OF_VOXELS: {
-            'train': 150000,
-            'test': 150000,
-        }
+    - NAME: transform_points_to_voxels
+      VOXEL_SIZE: [0.1, 0.1, 0.15]
+      MAX_POINTS_PER_VOXEL: 5
+      MAX_NUMBER_OF_VOXELS: {
+          'train': 150000,
+          'test': 150000,
+      }
+# --------------------------------------------------------
 
-    # 定义数据增强器
-    -   NAME: data_augmentor
-        DISABLE_AUG_LIST: ['placeholder']
-        AUG_CONFIG_LIST:
-            # 随机沿x轴和y轴翻转
-            -   NAME: random_world_flip
-                ALONG_AXIS_LIST: ['x', 'y']
+# --- 结构修正：将数据增强器移到独立的顶层配置块 ---
+DATA_AUGMENTOR:
+    DISABLE_AUG_LIST: ['placeholder']
+    AUG_CONFIG_LIST:
+        - NAME: random_world_flip
+          ALONG_AXIS_LIST: ['x', 'y']
 
-            # 随机全局旋转 (-45° 到 +45°)
-            -   NAME: random_world_rotation
-                WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+        - NAME: random_world_rotation
+          WORLD_ROT_ANGLE: [-0.39, 0.39]
 
-            # 随机全局缩放 (0.95倍 到 1.05倍)
-            -   NAME: random_world_scaling
-                WORLD_SCALE_RANGE: [0.95, 1.05]
+        - NAME: random_world_scaling
+          WORLD_SCALE_RANGE: [0.95, 1.05]
+# ----------------------------------------------------
 
 GET_ITEM_LIST: ["points"]
 FOV_POINTS_ONLY: False

@@ -3,113 +3,329 @@
 
 import numpy as np
 import pickle
+import torch
+import re
+from collections import defaultdict
+import copy
 from pathlib import Path
 from ...utils import box_utils
 from ..dataset import DatasetTemplate
+from ...ops.iou3d_nms import iou3d_nms_utils
 
 
-class CustomDataset(DatasetTemplate):
+CUSTOM_KEYPOINT_NAME_TO_ID = {
+    'nose':0,
+    'left_shoulder': 1,
+    'right_shoulder': 2,
+    'left_elbow': 3,
+    'right_elbow': 4,
+    'left_wrist': 5,
+    'right_wrist': 6,
+    'left_hip': 7,
+    'right_hip': 8,
+    'left_knee': 9,
+    'right_knee': 10,
+    'left_ankle': 11,
+    'right_ankle': 12,
+    'head': 13,
+}
+
+CUSTOM_KEYPOINT_ID_TO_NAME = {v: k for k, v in CUSTOM_KEYPOINT_NAME_TO_ID.items()}
+
+class CustomDatasetKP(DatasetTemplate):
     def __init__(self, dataset_cfg, class_names, training=True, root_path=None, logger=None):
-        """
-        Args:
-            root_path:
-            dataset_cfg:
-            class_names:
-            training:
-            logger:
-        """
         super().__init__(
             dataset_cfg=dataset_cfg, class_names=class_names, training=training, root_path=root_path, logger=logger
         )
         self.split = self.dataset_cfg.DATA_SPLIT[self.mode]
-        self.root_split_path = self.root_path / ('training' if self.split == 'train' else 'testing')
+        self.root_path = Path(self.root_path)
 
-        # 直接加载infos.pkl文件，不再需要sample_id_list
+        # 从配置中读取序列参数
+        self.sequence_length = self.dataset_cfg.get('SEQUENCE_LENGTH', 1)
+        self.max_points_per_frame = self.dataset_cfg.get('MAX_POINTS_PER_FRAME', 160000)
+        self.max_people_per_frame = self.dataset_cfg.get('MAX_PEOPLE_PER_FRAME', 10)
+        self.num_keypoints = self.dataset_cfg.get('NUM_KEYPOINTS', 14)
+
+        # 加载infos并构建序列
         self.infos = []
         self.include_custom_data(self.mode)
 
-        # -- KEYPOINT MODIFICATION --
-        # 从配置中读取关键点数量
-        self.num_keypoints = self.dataset_cfg.get('NUM_KEYPOINTS', 14)
+        if self.logger is not None:
+            self.logger.info(f'Loaded {len(self.infos)} individual frames.')
+
+        if self.sequence_length > 1:
+            self.infos = self.build_sequences(self.infos)
+            if self.logger is not None:
+                self.logger.info(f'Built {len(self.infos)} sequences of length {self.sequence_length}.')
+
+    def build_sequences(self, all_frame_infos):
+        # 这个版本的build_sequences是正确的，它构建的是“场景”的滑动窗口
+        sequences = []
+        infos_by_video = defaultdict(list)
+        pattern = re.compile(r'(.*) \(Frame (\d+)\)')
+
+        for info in all_frame_infos:
+            match = pattern.match(info['frame_id'])
+            if match:
+                video_id, frame_num_str = match.groups()
+                info['frame_num'] = int(frame_num_str)
+                infos_by_video[video_id].append(info)
+
+        for video_id, frame_infos in infos_by_video.items():
+            frame_infos.sort(key=lambda e: e['frame_num'])
+            for i in range(len(frame_infos) - self.sequence_length + 1):
+                sequences.append(frame_infos[i: i + self.sequence_length])
+
+        return sequences
 
     def include_custom_data(self, mode):
-        if self.logger is not None:
-            self.logger.info('Loading Custom dataset')
-
-        # 直接加载由我们脚本生成的pkl文件
-        for info_path in self.dataset_cfg.INFO_PATH[mode]:
+        info_path_list = self.dataset_cfg.INFO_PATH[mode]
+        for info_path in info_path_list:
             info_path = self.root_path / info_path
-            if not info_path.exists():
-                self.logger.warning(f"Info file not found: {info_path}")
-                continue
+            if not info_path.exists(): continue
             with open(info_path, 'rb') as f:
-                infos = pickle.load(f)
-                self.infos.extend(infos)
+                self.infos.extend(pickle.load(f))
 
-        if self.logger is not None:
-            self.logger.info('Total samples for CUSTOM dataset: %d' % (len(self.infos)))
+    def generate_prediction_dicts(self, batch_dict, pred_dicts, class_names, output_path=None):
+        """
+        重写此函数，以从零开始构建包含所有必要信息的、结构正确的预测字典。
+        Args:
+            pred_dicts: list of pred_dicts, e.g.,
+                [
+                    {
+                        'pred_boxes': (N, 7), 'pred_scores': (N), 'pred_labels': (N),
+                        'pred_kps': (N, 14, 3), 'pred_kps_vis': (N, 14, 1)
+                    }, ...
+                ]
+        Returns:
+            annos: A list of list of dicts.
+                The outer list corresponds to samples in batch.
+                The inner list corresponds to detected boxes in a sample.
+        """
+        annos = []
+        for index, pred_dict in enumerate(pred_dicts):
+            single_pred_list = []
+            frame_id = batch_dict['frame_id'][index]
+
+            pred_scores = pred_dict['pred_scores'].cpu().numpy()
+            pred_boxes = pred_dict['pred_boxes'].cpu().numpy()
+            pred_labels = pred_dict['pred_labels'].cpu().numpy()
+            pred_kps = pred_dict['pred_kps'].cpu().numpy()
+            pred_kps_vis = pred_dict['pred_kps_vis'].cpu().numpy()
+
+            for i in range(len(pred_boxes)):
+                # 为当前样本的每一个预测框创建一个标准anno字典
+                anno = {
+                    'frame_id': frame_id,
+                    'name': class_names[pred_labels[i] - 1],
+                    'score': pred_scores[i],
+                    'boxes_lidar': pred_boxes[i],
+                    'keypoints': pred_kps[i],
+                    'keypoints_visible': pred_kps_vis[i].flatten()
+                }
+                single_pred_list.append(anno)
+
+            annos.append(single_pred_list)
+
+        return annos
 
     def get_lidar(self, lidar_path):
         # 假设点云文件是 .bin 格式，每点4个特征 (x, y, z, intensity)
-        # 您可以根据自己的数据格式修改这里的维度
         return np.fromfile(str(lidar_path), dtype=np.float32).reshape(-1, 4)
 
     def __len__(self):
-        if self._merge_all_iters_to_one_epoch:
-            return len(self.infos) * self.total_epochs
         return len(self.infos)
 
+    # def __len__(self):
+    #     if self._merge_all_iters_to_one_epoch:
+    #         return len(self.infos) * self.total_epochs
+    #     return len(self.infos)
+    #最后再使用，先跑通代码
+
+    # --- 必须实现的 __getitem__ 方法 ---
     def __getitem__(self, index):
-        if self._merge_all_iters_to_one_epoch:
-            index = index % len(self.infos)
+        sequence_infos = self.infos[index]
 
-        info = self.infos[index].copy()
+        processed_sequence_data = []
+        # 对序列中的每一帧，独立进行完整的数据加载和预处理
+        for frame_info in sequence_infos:
+            input_dict = self.get_single_frame_info(frame_info)
+            # 对单帧数据调用prepare_data，进行增强和体素化
+            single_frame_processed_dict = self.prepare_data(data_dict=input_dict)
+            processed_sequence_data.append(single_frame_processed_dict)
 
-        # 从相对路径构建绝对路径
-        points_path = self.root_path / info['point_cloud']['lidar_path']
+        return processed_sequence_data
+
+    def get_single_frame_info(self, frame_info):
+        """ 辅助函数，用于加载和格式化单帧数据 """
+        points_path = self.root_path / frame_info['point_cloud']['lidar_path']
         points = self.get_lidar(points_path)
+        input_dict = {'points': points, 'frame_id': frame_info['frame_id']}
 
-        input_dict = {
-            'points': points,
-            'frame_id': info['frame_id'],
-        }
+        if 'annos' in frame_info:
+            annos = frame_info['annos']
+            gt_mask = np.array([n in self.class_names for n in annos['name']], dtype=bool)
 
-        if 'annos' in info:
-            annos = info['annos']
-            # -- KEYPOINT MODIFICATION --
-            # 移除 'DontCare' 类别 (如果您的标注中有的话)
-            # annos = self.remove_dont_care(annos)
+            annos = {key: val[gt_mask] for key, val in annos.items() if isinstance(val, np.ndarray)}
 
-            loc = annos['location']
-            dims = annos['dimensions']
-            rots = annos['rotation_y']
-            names = annos['name']
-
-            gt_boxes_lidar = np.concatenate([loc, dims, rots[..., np.newaxis]], axis=1).astype(np.float32)
-
-            input_dict.update({
-                'gt_names': names,
-                'gt_boxes': gt_boxes_lidar,
-            })
+            input_dict['gt_names'] = annos['name']
+            input_dict['gt_boxes'] = annos['gt_boxes_lidar']
 
             if 'keypoints' in annos:
-                keypoints = annos['keypoints']
-                keypoints_visible = annos['keypoints_visible']
+                input_dict['keypoint_location'] = annos['keypoints'].reshape(-1, self.num_keypoints, 3)
+                input_dict['keypoint_visibility'] = annos['keypoints_visible'].reshape(-1, self.num_keypoints)
+                input_dict['keypoint_mask'] = annos['keypoints_visible'].reshape(-1, self.num_keypoints)
+                if 'obj_ids' in annos:
+                    input_dict['obj_ids'] = annos['obj_ids']
+        return input_dict
 
-                input_dict.update({
-                    'gt_keypoints': keypoints.astype(np.float32).reshape(-1, self.num_keypoints, 3),
-                    'gt_keypoints_visible': keypoints_visible.astype(np.int32).reshape(-1, self.num_keypoints)
-                })
+    @staticmethod
+    def collate_batch(batch_list):
+        """
+        全新的collate_batch函数，专门用于处理序列化数据。
+        它接收一个批次的序列列表，并将其打包成最终的、带有时间维度的张量。
+        """
+        batch_size = len(batch_list)
+        sequence_length = len(batch_list[0]) if batch_size > 0 else 0
 
-        data_dict = self.prepare_data(data_dict=input_dict)
+        final_batch_dict = defaultdict(list)
 
-        if data_dict.get('gt_boxes', None) is not None and len(data_dict['gt_boxes']) == 0:
-            data_dict['gt_boxes'] = np.zeros((0, 7), dtype=np.float32)
-            if 'gt_keypoints' in data_dict:
-                data_dict['gt_keypoints'] = np.zeros((0, self.num_keypoints, 3), dtype=np.float32)
-                data_dict['gt_keypoints_visible'] = np.zeros((0, self.num_keypoints), dtype=np.int32)
+        # 按时间步（t）重组数据
+        for t in range(sequence_length):
+            # 收集当前时间步t，在所有batch中的数据
+            list_of_dicts_for_this_timestep = [batch_list[b][t] for b in range(batch_size)]
 
-        return data_dict
+            # 使用OpenPCDet原生的collate_batch来高效地打包单帧数据
+            # 这会自动处理体素和标注的填充
+            collated_dict_for_this_timestep = DatasetTemplate.collate_batch(list_of_dicts_for_this_timestep)
+
+            # 将打包好的单帧数据添加到final_batch_dict中
+            for key, val in collated_dict_for_this_timestep.items():
+                final_batch_dict[key].append(val)
+
+        # 将打包好的帧列表，最终堆叠成带有时间维度的张量
+        ret = {}
+        for key, val_list in final_batch_dict.items():
+            if key in ['frame_id', 'gt_names']:  # 对于非数组数据
+                ret[key] = val_list
+                continue
+
+            # 将 (T, B, ...) 堆叠成 (B, T, ...)
+            try:
+                ret[key] = np.stack(val_list, axis=1)
+            except:
+                # 对于像voxel_coords这样已经合并了batch维度的特殊情况
+                ret[key] = val_list  # 暂时保持为列表
+
+        ret['batch_size'] = batch_size
+        return ret
+
+    def evaluation(self, det_annos, class_names, **kwargs):
+        if 'custom_kp' not in self.dataset_cfg.EVAL_METRIC:
+            self.logger.info('Skip keypoint evaluation since the EVAL_METRIC is not "custom_kp".')
+            return 'Evaluation metric %s not supported.' % self.dataset_cfg.EVAL_METRIC, {}
+
+        logger = kwargs.get('logger', None)
+        if logger:
+            logger.info('**********************Start Custom Evaluation (Visible/Invisible MPJPE)**********************')
+
+        gt_annos = [info['annos'] for info in self.infos]
+
+        vis_error_sum = np.zeros(self.num_keypoints, dtype=np.float64)
+        vis_count = np.zeros(self.num_keypoints, dtype=np.int64)
+        invis_error_sum = np.zeros(self.num_keypoints, dtype=np.float64)
+        invis_count = np.zeros(self.num_keypoints, dtype=np.int64)
+
+        for frame_idx in range(len(det_annos)):
+            pred_annos_per_sample = det_annos[frame_idx]
+            gt_annos_per_sample = gt_annos[frame_idx]
+
+            for cur_class in class_names:
+                pred_boxes_cls = np.array(
+                    [anno['boxes_lidar'] for anno in pred_annos_per_sample if anno['name'] == cur_class])
+                pred_scores_cls = np.array(
+                    [anno['score'] for anno in pred_annos_per_sample if anno['name'] == cur_class])
+                pred_kps_cls = np.array(
+                    [anno['keypoints'] for anno in pred_annos_per_sample if anno['name'] == cur_class])
+
+                gt_boxes_cls_mask = (gt_annos_per_sample['name'] == cur_class)
+                gt_boxes_cls = gt_annos_per_sample['gt_boxes_lidar'][gt_boxes_cls_mask]
+                gt_kps_cls = gt_annos_per_sample['keypoints'][gt_boxes_cls_mask]
+                gt_kps_vis_cls = gt_annos_per_sample['keypoints_visible'][gt_boxes_cls_mask]
+
+                if pred_boxes_cls.shape[0] == 0 or gt_boxes_cls.shape[0] == 0:
+                    continue
+
+                pred_boxes_tensor = torch.from_numpy(pred_boxes_cls).cuda()
+                gt_boxes_tensor = torch.from_numpy(gt_boxes_cls).cuda()
+                iou_matrix = iou3d_nms_utils.boxes_iou3d_gpu(pred_boxes_tensor, gt_boxes_tensor).cpu().numpy()
+
+                gt_matched = np.zeros(gt_boxes_cls.shape[0])
+                sorted_indices = np.argsort(-pred_scores_cls)
+
+                for pred_idx in sorted_indices:
+                    max_iou = -1
+                    matched_gt_idx = -1
+                    if iou_matrix.shape[0] > pred_idx:
+                        gt_indices = np.where(iou_matrix[pred_idx, :] > 0.5)[0]
+                        if gt_indices.size > 0:
+                            max_iou_gt_idx = np.argmax(iou_matrix[pred_idx, gt_indices])
+                            max_iou = iou_matrix[pred_idx, gt_indices[max_iou_gt_idx]]
+                            matched_gt_idx = gt_indices[max_iou_gt_idx]
+
+                    if max_iou > 0.5 and gt_matched[matched_gt_idx] == 0:
+                        gt_matched[matched_gt_idx] = 1
+
+                        pred_kps = pred_kps_cls[pred_idx]
+                        gt_kps = gt_kps_cls[matched_gt_idx]
+                        gt_kps_vis = gt_kps_vis_cls[matched_gt_idx]
+
+                        error = np.linalg.norm(pred_kps - gt_kps, axis=-1)
+
+                        visible_mask = (gt_kps_vis == 1)
+                        invisible_mask = (gt_kps_vis == 0)
+
+                        vis_error_sum += error * visible_mask
+                        vis_count += visible_mask
+                        invis_error_sum += error * invisible_mask
+                        invis_count += invisible_mask
+
+        result_str = '\n'
+        result_dict = {}
+
+        def generate_report(title, error_sum, count, result_dict):
+            report_str = f'--- MPJPE Evaluation ({title}) ---\n'
+            per_joint_mpjpe = np.divide(error_sum, count, out=np.zeros_like(error_sum), where=count != 0)
+            overall_mpjpe = np.sum(error_sum) / np.sum(count) if np.sum(count) > 0 else 0.0
+            per_joint_mpjpe_cm = per_joint_mpjpe * 100
+            overall_mpjpe_cm = overall_mpjpe * 100
+
+            report_str += 'Per-Keypoint MPJPE (cm):\n'
+            for i in range(self.num_keypoints):
+                keypoint_name = CUSTOM_KEYPOINT_ID_TO_NAME.get(i, f'unknown_{i}')
+                report_str += f'  - {keypoint_name:15s}: {per_joint_mpjpe_cm[i]:.2f}\n'
+                result_dict[f'MPJPE_{title}_{keypoint_name}'] = per_joint_mpjpe_cm[i]
+
+            report_str += '-----------------------------------\n'
+            report_str += f'Overall MPJPE (cm): {overall_mpjpe_cm:.2f}\n\n'
+            result_dict[f'MPJPE_Overall_{title}_cm'] = overall_mpjpe_cm
+            return report_str, result_dict
+
+        result_str_vis, result_dict = generate_report('Visible_Only', vis_error_sum, vis_count, result_dict)
+        result_str += result_str_vis
+        result_str_invis, result_dict = generate_report('Invisible_Only', invis_error_sum, invis_count, result_dict)
+        result_str += result_str_invis
+
+        all_error_sum = vis_error_sum + invis_error_sum
+        all_count = vis_count + invis_count
+        result_str_all, result_dict = generate_report('All_Points', all_error_sum, all_count, result_dict)
+        result_str += result_str_all
+
+        if logger is not None:
+            logger.info(result_str)
+            logger.info('**********************End Custom Evaluation**********************')
+
+        return result_str, result_dict
 
 
 # -------------------- .pkl文件生成脚本部分 --------------------
@@ -132,6 +348,7 @@ def process_single_scene(scene_id, points_dir, labels_dir, num_point_features):
     gt_boxes_lidar = []
     keypoints_list = []
     keypoints_visible_list = []
+    object_ids_list = []
 
     for obj in annos_json:
         gt_names.append(obj['class'])
@@ -140,6 +357,7 @@ def process_single_scene(scene_id, points_dir, labels_dir, num_point_features):
         gt_boxes_lidar.append([*box['center'], *box['size'], box['heading']])
         keypoints_list.append(obj['keypoints'])
         keypoints_visible_list.append(obj['keypoints_visible'])
+        object_ids_list.append(obj.get('object_id', ''))
 
     gt_names_np = np.array(gt_names)
     gt_boxes_lidar_np = np.array(gt_boxes_lidar, dtype=np.float32)
@@ -155,6 +373,7 @@ def process_single_scene(scene_id, points_dir, labels_dir, num_point_features):
         'gt_boxes_lidar': gt_boxes_lidar_np,
         'keypoints': keypoints_np,
         'keypoints_visible': keypoints_visible_np,
+        'object_ids': np.array(object_ids_list) # 保持原样
     }
 
     # 组装最终的 info 字典
@@ -172,7 +391,7 @@ def process_single_scene(scene_id, points_dir, labels_dir, num_point_features):
 
 def create_custom_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
     from tqdm import tqdm
-    dataset = CustomDataset(
+    dataset = CustomDatasetKP(
         dataset_cfg=dataset_cfg, class_names=class_names, root_path=data_path, training=False
     )
     train_split, val_split = 'train', 'val'

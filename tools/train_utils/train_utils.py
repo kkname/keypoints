@@ -128,10 +128,10 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
                 # tbar.refresh()
 
             if tb_log is not None:
-                tb_log.add_scalar('train/loss', loss, accumulated_iter)
-                tb_log.add_scalar('meta_data/learning_rate', cur_lr, accumulated_iter)
+                tb_log.add_scalar('train/loss', loss, cur_it, cur_epoch)
+                tb_log.add_scalar('meta_data/learning_rate', cur_lr, cur_epoch)
                 for key, val in tb_dict.items():
-                    tb_log.add_scalar('train/' + key, val, accumulated_iter)
+                    tb_log.add_scalar('train/' + key, val, cur_epoch)
             
             # save intermediate ckpt every {ckpt_save_time_interval} seconds         
             time_past_this_epoch = pbar.format_dict['elapsed']

@@ -15,6 +15,7 @@ from .lyft.lyft_dataset import LyftDataset
 from .once.once_dataset import ONCEDataset
 from .argo2.argo2_dataset import Argo2Dataset
 from .custom.custom_dataset import CustomDataset
+from .custom.custom_dataset_kp import CustomDatasetKP
 
 __all__ = {
     'DatasetTemplate': DatasetTemplate,
@@ -26,7 +27,8 @@ __all__ = {
     'LyftDataset': LyftDataset,
     'ONCEDataset': ONCEDataset,
     'CustomDataset': CustomDataset,
-    'Argo2Dataset': Argo2Dataset
+    'Argo2Dataset': Argo2Dataset,
+    'CustomDatasetKP': CustomDatasetKP,
 }
 
 

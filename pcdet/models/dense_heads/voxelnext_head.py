@@ -20,6 +20,9 @@ class SeparateHead(nn.Module):
         super().__init__()
         self.sep_head_dict = sep_head_dict
 
+        # print(
+        #     f"DEBUG INFO: Creating SeparateHead for {self.head_cfg.HEAD_ORDER} expecting input_channels: {input_channels}")
+
         for cur_name in self.sep_head_dict:
             output_channels = self.sep_head_dict[cur_name]['out_channels']
             num_conv = self.sep_head_dict[cur_name]['num_conv']
@@ -508,8 +511,8 @@ class VoxelNeXtHead(nn.Module):
 
                 heatmap, ret_boxes, inds, mask = self.assign_target_of_single_head(
                     num_classes=len(cur_class_names), gt_boxes=gt_boxes_single_head,
-                    num_voxels=num_voxels[bs_idx], spatial_indices=spatial_indices[bs_idx], 
-                    spatial_shape=spatial_shape, 
+                    num_voxels=num_voxels[bs_idx], spatial_indices=spatial_indices[bs_idx],
+                    spatial_shape=spatial_shape,
                     feature_map_stride=target_assigner_cfg.FEATURE_MAP_STRIDE,
                     num_max_objs=target_assigner_cfg.NUM_MAX_OBJS,
                     gaussian_overlap=target_assigner_cfg.GAUSSIAN_OVERLAP,

@@ -21,6 +21,22 @@ box_colormap = [
     [1, 1, 0],
 ]
 
+SKELETON_CONNECTIONS = [
+    [0, 13], # nose-head
+    [1, 2],  # left_shoulder-right_shoulder
+    [1, 3],  # left_shoulder-left_elbow
+    [3, 5],  # left_elbow-left_wrist
+    [2, 4],  # right_shoulder-right_elbow
+    [4, 6],  # right_elbow-right_wrist
+    [1, 7],  # left_shoulder-left_hip
+    [2, 8],  # right_shoulder-right_hip
+    [7, 8],  # left_hip-right_hip
+    [7, 9],  # left_hip-left_knee
+    [9, 11], # left_knee-left_ankle
+    [8, 10], # right_hip-right_knee
+    [10, 12] # right_knee-right_ankle
+]
+
 
 def create_arrow(pos=[0, 0, 0], degree=0, color=[1, 0, 0]):
     length = 0.5
@@ -256,6 +272,9 @@ def draw_scenes(
     parameters = o3d.io.read_pinhole_camera_parameters(
         os.path.join(os.path.dirname(__file__), "./camera_pose_2.json"))
     ctr.convert_from_pinhole_camera_parameters(parameters)
+
+    vis.run()
+    vis.destroy_window()
     
     return vis
 
@@ -359,3 +378,62 @@ def draw_human(keypoints, color=(0.333, 0.333, 1.0)):
             all_geo.append(cylinder)
 
     return all_geo
+
+class PlaybackVisualizer(object):
+    def __init__(self, point_size=1.5, background_color=[0, 0, 0]):
+        self.vis = o3d.visualization.Visualizer()
+        self.vis.create_window(window_name='VoxelKP Continuous Playback', width=1920, height=1080)
+
+        render_option = self.vis.get_render_option()
+        render_option.point_size = point_size
+        render_option.background_color = np.asarray(background_color)
+
+        # 初始化一个空的点云几何体，后续只更新它的点
+        self.pcd = o3d.geometry.PointCloud()
+        self.vis.add_geometry(self.pcd)
+
+        # 初始化坐标系
+        axis_pcd = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
+        self.vis.add_geometry(axis_pcd)
+
+        # 用于存储上一帧的动态几何体（框和骨骼）
+        self.last_geometries = []
+
+        # 尝试设置初始视角
+        try:
+            ctr = self.vis.get_view_control()
+            param = o3d.io.read_pinhole_camera_parameters("tools/visual_utils/my_camera_pose.json")
+            ctr.convert_from_pinhole_camera_parameters(param)
+        except Exception:
+            pass
+
+    def update(self, points, ref_boxes=None, ref_keypoints=None):
+        # 1. 清除上一帧的动态几何体（框和骨骼）
+        for geom in self.last_geometries:
+            self.vis.remove_geometry(geom, reset_bounding_box=False)
+        self.last_geometries = []
+
+        # 2. 更新点云（这是最高效的方式，不会闪烁）
+        if isinstance(points, torch.Tensor):
+            points = points.cpu().numpy()
+        self.pcd.points = o3d.utility.Vector3dVector(points[:, :3])
+        self.vis.update_geometry(self.pcd)
+
+        # 3. 创建并添加新一帧的动态几何体
+        # 我们复用文件中已有的obtain_all_geometry函数来创建
+        new_geometries = obtain_all_geometry(
+            points=np.zeros((0,3)), # 传入空点云，因为它已单独处理
+            ref_boxes=ref_boxes,
+            ref_keypoints=ref_keypoints,
+            draw_origin=False
+        )
+        for geom in new_geometries:
+            self.vis.add_geometry(geom, reset_bounding_box=False)
+            self.last_geometries.append(geom)
+
+        # 4. 刷新窗口
+        self.vis.poll_events()
+        self.vis.update_renderer()
+
+    def close(self):
+        self.vis.destroy_window()
