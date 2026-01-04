@@ -220,20 +220,11 @@ class VoxelNeXtHeadKPMerge(VoxelNeXtHeadKP):
         return ret_dict
 
     def forward(self, data_dict):
-        if 'spatial_features_2d' in data_dict:
-            # 如果是时序模型，直接使用融合后的2D特征
-            x_2d = data_dict['spatial_features_2d']
-            # 直接从data_dict中获取所有上下文信息
-            spatial_shape, batch_index, voxel_indices, spatial_indices, num_voxels = \
-                (x_2d.shape[2:], data_dict.get('batch_index'), data_dict['voxel_coords'],
-                 data_dict['voxel_coords'][:, 1:], data_dict['voxel_num_points'])
-        else:
-            # 如果是单帧模型，执行原始的3D转2D逻辑
-            x_3d_sparse = data_dict['encoded_spconv_tensor']
-            # 从3D稀疏张量中获取所有上下文信息
-            spatial_shape, batch_index, voxel_indices, spatial_indices, num_voxels = self._get_voxel_infos(x_3d_sparse)
-            # 将3D稀疏张量转换为2D密集BEV图
-            x_2d = x_3d_sparse
+        # 统一的Sparse输入处理
+        # 适用于单帧模型和稀疏时序融合模型
+        x_3d_sparse = data_dict['encoded_spconv_tensor']
+        spatial_shape, batch_index, voxel_indices, spatial_indices, num_voxels = self._get_voxel_infos(x_3d_sparse)
+        x_2d = x_3d_sparse
 
         self.forward_ret_dict['batch_index'] = batch_index
 

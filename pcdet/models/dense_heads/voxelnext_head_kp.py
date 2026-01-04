@@ -4,7 +4,6 @@ import torch.nn as nn
 from torch.nn.init import kaiming_normal_
 from ..model_utils import centernet_utils
 from ..model_utils import model_nms_utils
-from ..model_utils.temporal_loss import TemporalConsistencyLoss
 from ...utils import loss_utils
 from ...utils import loss_utils_kp
 from ...utils.spconv_utils import replace_feature, spconv
@@ -137,13 +136,6 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
         if self.iou_branch:
             self.add_module('crit_iou', loss_utils.IouLossSparse())
             self.add_module('crit_iou_reg', loss_utils.IouRegLossSparse())
-
-        # 添加时序一致性损失模块
-        self.add_module('temporal_loss_func', TemporalConsistencyLoss(
-            position_weight=1.0,
-            velocity_weight=0.5,
-            min_matched_frames=2
-        ))
 
     def distance(self, voxel_indices, center):
         distances = ((voxel_indices - center.unsqueeze(0))**2).sum(-1)
@@ -320,7 +312,7 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
         y = torch.clamp(x.sigmoid(), min=1e-4, max=1 - 1e-4)
         return y
 
-    def get_loss(self, per_frame_predictions=None, obj_ids=None):
+    def get_loss(self):
         pred_dicts = self.forward_ret_dict['pred_dicts']
         target_dicts = self.forward_ret_dict['target_dicts']
         batch_index = self.forward_ret_dict['batch_index']
@@ -439,30 +431,6 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
                 tb_dict['iou_reg_loss_head_%d' % idx] = iou_reg_loss.item()
             else:
                 loss += hm_loss + (loc_loss + reg_kp_loss) / 2 + reg_kp_vis_loss
-
-        # 计算时序一致性损失（如果提供了多帧预测数据）
-        if per_frame_predictions is not None and obj_ids is not None:
-            temporal_loss_dict = self.temporal_loss_func(
-                per_frame_predictions=per_frame_predictions,
-                obj_ids=obj_ids
-            )
-
-            # 提取损失值
-            temporal_smoothness = temporal_loss_dict['temporal_smoothness_loss']
-            temporal_velocity = temporal_loss_dict['temporal_velocity_loss']
-            temporal_total = temporal_loss_dict['temporal_loss']
-
-            # 时序损失权重（可以添加到配置文件中）
-            temporal_weight = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS.get('temporal_weight', 0.1)
-
-            # 添加到总损失
-            loss += temporal_weight * temporal_total
-
-            # 添加到tensorboard记录
-            tb_dict['temporal_smoothness_loss'] = temporal_smoothness.item()
-            tb_dict['temporal_velocity_loss'] = temporal_velocity.item()
-            tb_dict['temporal_total_loss'] = temporal_total.item()
-            tb_dict['temporal_weighted_loss'] = (temporal_weight * temporal_total).item()
 
         tb_dict['rpn_loss'] = loss.item()
         return loss, tb_dict

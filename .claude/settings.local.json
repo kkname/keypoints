@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git push:*)",
+      "Bash(ssh:*)",
+      "Bash(ssh-keyscan:*)",
+      "Bash(~/.ssh/known_hosts)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\n重构时序融合模块并清理代码\n\n主要改进：\n- 用SparseTemporalFusionWithAdapter替换旧的TemporalTransformer\n- 新模块保持稀疏性，避免LayerNorm破坏背景特征\n- 集成特征适配器实现自动分布对齐\n- 删除过时的测试脚本和诊断工具\n- 简化代码逻辑，移除冗余的调试代码\n- 新增稀疏时序融合使用指南文档\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+    ]
+  }
+}
