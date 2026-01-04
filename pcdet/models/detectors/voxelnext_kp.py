@@ -103,7 +103,6 @@ class VoxelNeXt_KP(Detector3DTemplate):
 
         # 清理中间变量
         del bev_features_list
-        torch.cuda.empty_cache()
 
         # [诊断点] 融合后的稀疏张量（用于Dense Head）
         if not self.training and DIAGNOSTICS_AVAILABLE:
