@@ -80,10 +80,13 @@ MODEL:
                     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
                 ],
                 'kp_visibility_weights': 1,
+                # Temporal consistency loss weight (for multi-frame training)
+                # 第一阶段：禁用temporal loss，让模型先学会用多帧信息做检测
+                'temporal_weight': 0,  # 暂时禁用，等检测稳定后再启用
             }
 
         POST_PROCESSING:
-            SCORE_THRESH: 0.3
+            SCORE_THRESH: 0.3  # 恢复正常阈值
             POST_CENTER_LIMIT_RANGE: [-75.2, -75.2, -2, 75.2, 75.2, 4]
             MAX_OBJ_PER_SAMPLE: 500
             NMS_CONFIG:
@@ -99,11 +102,11 @@ MODEL:
 
 
 OPTIMIZATION:
-    BATCH_SIZE_PER_GPU: 2
-    NUM_EPOCHS: 500
+    BATCH_SIZE_PER_GPU: 1  # 无AMP，每卡1个样本，总batch=2
+    NUM_EPOCHS: 30  # 先用30轮快速验证迁移学习是否有效
 
     OPTIMIZER: adam_onecycle
-    LR: 0.003
+    LR: 0.002  # 总batch_size=2的推荐学习率
     WEIGHT_DECAY: 0.01
     MOMENTUM: 0.9
 
@@ -114,7 +117,9 @@ OPTIMIZATION:
     LR_DECAY: 0.3
     LR_CLIP: 0.0000001
 
-    LR_WARMUP: Ture
-    WARMUP_EPOCH: 2
+    LR_WARMUP: True
+    WARMUP_EPOCH: 3  # 增加warmup稳定训练（原2）
 
     GRAD_NORM_CLIP: 10
+
+    

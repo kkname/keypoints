@@ -24,11 +24,11 @@ INFO_PATH:
     test: [custom_infos_val.pkl]
 
 # --- 新增：时序处理相关参数 ---
-SEQUENCE_LENGTH: 3  # 定义每个序列包含的帧数 (例如3帧)
+SEQUENCE_LENGTH: 3  # 定义每个序列包含的帧数 (多卡训练，恢复到5帧)
 
 # 为了将不同帧的数据堆叠(stack)成一个张量，我们需要将它们填充到相同的大小
 # 您需要根据您数据集中最极端的情况来设定这两个值
-MAX_POINTS_PER_FRAME: 160000  # 数据集中单帧最多包含的点数
+MAX_POINTS_PER_FRAME: 1600000  # 数据集中单帧最多包含的点数
 MAX_PEOPLE_PER_FRAME: 4      # 数据集中单帧最多包含的人数
 # -------------------------------
 

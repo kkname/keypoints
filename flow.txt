@@ -1,0 +1,739 @@
+[1] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.7671, 5.7540]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1740, 3.5423]
+  Channel std: 0.9829
+
+[2] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0663, 6.1694]
+  Mean: -1.2876, Std: 1.4153
+  Abs Mean: 1.5569
+  Channel mean range: [-5.7015, 3.5680]
+  Channel std: 1.4052
+
+[3] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3503, Channels: 384
+  Range: [-6.0663, 6.1694]
+  Mean: -1.0902, Std: 1.5742
+  Abs Mean: 1.5749
+  Channel mean range: [-4.9390, 3.0456]
+  Channel std: 1.2460
+
+[4] head0_hm_logits
+  Shape: (1, 3503)
+  Range: [-137.7669, -6.2281]
+  Mean: -49.5828, Std: 14.8557
+  Abs Mean: 49.5828
+
+[5] head0_hm_after_sigmoid
+  Shape: (1, 3503)
+  Range: [0.0000, 0.0020]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000
+
+[6] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.5720, 6.4029]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1731, 3.5413]
+  Channel std: 0.9827
+
+[7] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0681, 6.7530]
+  Mean: -1.2872, Std: 1.4157
+  Abs Mean: 1.5569
+  Channel mean range: [-5.7001, 3.5671]
+  Channel std: 1.4049
+
+[8] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3609, Channels: 384
+  Range: [-6.0681, 6.7530]
+  Mean: -1.0849, Std: 1.5791
+  Abs Mean: 1.5761
+  Channel mean range: [-4.9141, 3.0298]
+  Channel std: 1.2396
+
+[9] head0_hm_logits
+  Shape: (1, 3609)
+  Range: [-136.9940, -5.8940]
+  Mean: -49.3398, Std: 15.0523
+  Abs Mean: 49.3398
+
+[10] head0_hm_after_sigmoid
+  Shape: (1, 3609)
+  Range: [0.0000, 0.0027]
+  Mean: 0.0000, Std: 0.0001
+  Abs Mean: 0.0000
+
+[11] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.5706, 6.0512]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1726, 3.5404]
+  Channel std: 0.9826
+
+[12] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0663, 6.5574]
+  Mean: -1.2871, Std: 1.4158
+  Abs Mean: 1.5569
+  Channel mean range: [-5.6994, 3.5661]
+  Channel std: 1.4047
+
+[13] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3655, Channels: 384
+  Range: [-6.0663, 6.5574]
+  Mean: -1.0831, Std: 1.5798
+  Abs Mean: 1.5757
+  Channel mean range: [-4.9030, 3.0086]
+  Channel std: 1.2371
+
+[14] head0_hm_logits
+  Shape: (1, 3655)
+  Range: [-137.3440, -5.6153]
+  Mean: -49.1081, Std: 14.9705
+  Abs Mean: 49.1081
+
+[15] head0_hm_after_sigmoid
+  Shape: (1, 3655)
+  Range: [0.0000, 0.0036]
+  Mean: 0.0000, Std: 0.0001
+  Abs Mean: 0.0000
+
+[16] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.8771, 6.3762]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1739, 3.5417]
+  Channel std: 0.9829
+
+[17] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0671, 7.0015]
+  Mean: -1.2875, Std: 1.4154
+  Abs Mean: 1.5569
+  Channel mean range: [-5.7016, 3.5674]
+  Channel std: 1.4052
+
+[18] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3576, Channels: 384
+  Range: [-6.0671, 7.0015]
+  Mean: -1.0930, Std: 1.5723
+  Abs Mean: 1.5753
+  Channel mean range: [-4.9537, 3.0321]
+  Channel std: 1.2485
+
+[19] head0_hm_logits
+  Shape: (1, 3576)
+  Range: [-137.0279, -4.1900]
+  Mean: -48.9082, Std: 14.7831
+  Abs Mean: 48.9082
+
+[20] head0_hm_after_sigmoid
+  Shape: (1, 3576)
+  Range: [0.0000, 0.0149]
+  Mean: 0.0000, Std: 0.0005
+  Abs Mean: 0.0000
+
+[21] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-4.0094, 6.1932]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1722, 3.5399]
+  Channel std: 0.9824
+
+[22] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0646, 6.6273]
+  Mean: -1.2868, Std: 1.4161
+  Abs Mean: 1.5569
+  Channel mean range: [-5.6982, 3.5655]
+  Channel std: 1.4044
+
+[23] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3652, Channels: 384
+  Range: [-6.0646, 6.6273]
+  Mean: -1.0761, Std: 1.5863
+  Abs Mean: 1.5769
+  Channel mean range: [-4.8765, 2.9947]
+  Channel std: 1.2293
+
+[24] head0_hm_logits
+  Shape: (1, 3652)
+  Range: [-137.9656, -9.3173]
+  Mean: -49.5391, Std: 15.4107
+  Abs Mean: 49.5391
+
+[25] head0_hm_after_sigmoid
+  Shape: (1, 3652)
+  Range: [0.0000, 0.0001]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000
+
+[26] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.5024, 5.9695]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1745, 3.5429]
+  Channel std: 0.9831
+
+[27] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0641, 6.3706]
+  Mean: -1.2879, Std: 1.4151
+  Abs Mean: 1.5569
+  Channel mean range: [-5.7027, 3.5687]
+  Channel std: 1.4055
+
+[28] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3427, Channels: 384
+  Range: [-6.0641, 6.3706]
+  Mean: -1.0956, Std: 1.5715
+  Abs Mean: 1.5760
+  Channel mean range: [-4.9517, 3.0486]
+  Channel std: 1.2509
+
+[29] head0_hm_logits
+  Shape: (1, 3427)
+  Range: [-137.8680, -8.0441]
+  Mean: -49.7008, Std: 14.8972
+  Abs Mean: 49.7008
+
+[30] head0_hm_after_sigmoid
+  Shape: (1, 3427)
+  Range: [0.0000, 0.0003]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000
+
+[31] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.7540, 6.2357]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1725, 3.5408]
+  Channel std: 0.9826
+
+[32] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0664, 6.6317]
+  Mean: -1.2872, Std: 1.4157
+  Abs Mean: 1.5569
+  Channel mean range: [-5.6995, 3.5665]
+  Channel std: 1.4048
+
+[33] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3629, Channels: 384
+  Range: [-6.0664, 6.6317]
+  Mean: -1.0858, Std: 1.5766
+  Abs Mean: 1.5748
+  Channel mean range: [-4.9017, 3.0155]
+  Channel std: 1.2387
+
+[34] head0_hm_logits
+  Shape: (1, 3629)
+  Range: [-137.2471, -4.1520]
+  Mean: -49.5116, Std: 15.4619
+  Abs Mean: 49.5116
+
+[35] head0_hm_after_sigmoid
+  Shape: (1, 3629)
+  Range: [0.0000, 0.0155]
+  Mean: 0.0000, Std: 0.0004
+  Abs Mean: 0.0000
+
+[36] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.6108, 5.6576]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1745, 3.5424]
+  Channel std: 0.9831
+
+[37] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0687, 5.6740]
+  Mean: -1.2879, Std: 1.4151
+  Abs Mean: 1.5569
+  Channel mean range: [-5.7028, 3.5680]
+  Channel std: 1.4055
+
+[38] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3488, Channels: 384
+  Range: [-6.0687, 5.6740]
+  Mean: -1.0993, Std: 1.5690
+  Abs Mean: 1.5764
+  Channel mean range: [-4.9696, 3.0372]
+  Channel std: 1.2531
+
+[39] head0_hm_logits
+  Shape: (1, 3488)
+  Range: [-137.4880, -4.0985]
+  Mean: -49.1593, Std: 14.7700
+  Abs Mean: 49.1593
+
+[40] head0_hm_after_sigmoid
+  Shape: (1, 3488)
+  Range: [0.0000, 0.0163]
+  Mean: 0.0000, Std: 0.0003
+  Abs Mean: 0.0000
+
+[41] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.5893, 5.6244]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1730, 3.5404]
+  Channel std: 0.9826
+
+[42] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0650, 5.6404]
+  Mean: -1.2872, Std: 1.4158
+  Abs Mean: 1.5570
+  Channel mean range: [-5.7000, 3.5659]
+  Channel std: 1.4048
+
+[43] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3607, Channels: 384
+  Range: [-6.0650, 5.6404]
+  Mean: -1.0846, Std: 1.5809
+  Abs Mean: 1.5777
+  Channel mean range: [-4.9103, 2.9949]
+  Channel std: 1.2363
+
+[44] head0_hm_logits
+  Shape: (1, 3607)
+  Range: [-137.4890, -6.9478]
+  Mean: -48.7559, Std: 15.0208
+  Abs Mean: 48.7559
+
+[45] head0_hm_after_sigmoid
+  Shape: (1, 3607)
+  Range: [0.0000, 0.0010]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000
+
+[46] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.7865, 6.2046]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1743, 3.5414]
+  Channel std: 0.9829
+
+[47] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0655, 6.7014]
+  Mean: -1.2877, Std: 1.4153
+  Abs Mean: 1.5569
+  Channel mean range: [-5.7022, 3.5669]
+  Channel std: 1.4053
+
+[48] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3489, Channels: 384
+  Range: [-6.0655, 6.7014]
+  Mean: -1.0927, Std: 1.5737
+  Abs Mean: 1.5767
+  Channel mean range: [-4.9494, 3.0037]
+  Channel std: 1.2459
+
+[49] head0_hm_logits
+  Shape: (1, 3489)
+  Range: [-137.5021, -4.4817]
+  Mean: -48.8472, Std: 14.9092
+  Abs Mean: 48.8472
+
+[50] head0_hm_after_sigmoid
+  Shape: (1, 3489)
+  Range: [0.0000, 0.0112]
+  Mean: 0.0000, Std: 0.0002
+  Abs Mean: 0.0000
+
+[51] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.6180, 6.7709]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1733, 3.5410]
+  Channel std: 0.9827
+
+[52] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0649, 7.4831]
+  Mean: -1.2873, Std: 1.4156
+  Abs Mean: 1.5570
+  Channel mean range: [-5.7006, 3.5665]
+  Channel std: 1.4050
+
+[53] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3570, Channels: 384
+  Range: [-6.0649, 7.4831]
+  Mean: -1.0870, Std: 1.5777
+  Abs Mean: 1.5773
+  Channel mean range: [-4.9235, 3.0094]
+  Channel std: 1.2414
+
+[54] head0_hm_logits
+  Shape: (1, 3570)
+  Range: [-137.4773, -2.2399]
+  Mean: -49.1225, Std: 15.2002
+  Abs Mean: 49.1225
+
+[55] head0_hm_after_sigmoid
+  Shape: (1, 3570)
+  Range: [0.0000, 0.0962]
+  Mean: 0.0000, Std: 0.0016
+  Abs Mean: 0.0000
+
+[56] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.4755, 6.4630]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1737, 3.5411]
+  Channel std: 0.9828
+
+[57] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0645, 7.0231]
+  Mean: -1.2875, Std: 1.4155
+  Abs Mean: 1.5570
+  Channel mean range: [-5.7012, 3.5667]
+  Channel std: 1.4051
+
+[58] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3516, Channels: 384
+  Range: [-6.0645, 7.0231]
+  Mean: -1.0889, Std: 1.5777
+  Abs Mean: 1.5775
+  Channel mean range: [-4.9280, 3.0028]
+  Channel std: 1.2412
+
+[59] head0_hm_logits
+  Shape: (1, 3516)
+  Range: [-137.4853, -9.2142]
+  Mean: -49.0917, Std: 15.0550
+  Abs Mean: 49.0917
+
+[60] head0_hm_after_sigmoid
+  Shape: (1, 3516)
+  Range: [0.0000, 0.0001]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000
+
+[61] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.5793, 5.5914]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1748, 3.5424]
+  Channel std: 0.9831
+
+[62] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0635, 5.8266]
+  Mean: -1.2879, Std: 1.4152
+  Abs Mean: 1.5570
+  Channel mean range: [-5.7030, 3.5682]
+  Channel std: 1.4055
+
+[63] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3426, Channels: 384
+  Range: [-6.0635, 5.8266]
+  Mean: -1.0938, Std: 1.5746
+  Abs Mean: 1.5775
+  Channel mean range: [-4.9594, 3.0318]
+  Channel std: 1.2492
+
+[64] head0_hm_logits
+  Shape: (1, 3426)
+  Range: [-137.9998, -8.7931]
+  Mean: -49.1739, Std: 14.7748
+  Abs Mean: 49.1739
+
+[65] head0_hm_after_sigmoid
+  Shape: (1, 3426)
+  Range: [0.0000, 0.0002]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000
+
+[66] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.5553, 5.6702]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1747, 3.5425]
+  Channel std: 0.9831
+
+[67] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0642, 6.2043]
+  Mean: -1.2879, Std: 1.4151
+  Abs Mean: 1.5569
+  Channel mean range: [-5.7029, 3.5683]
+  Channel std: 1.4055
+
+[68] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3437, Channels: 384
+  Range: [-6.0642, 6.2043]
+  Mean: -1.0956, Std: 1.5726
+  Abs Mean: 1.5769
+  Channel mean range: [-4.9611, 3.0368]
+  Channel std: 1.2494
+
+[69] head0_hm_logits
+  Shape: (1, 3437)
+  Range: [-137.4844, -9.3646]
+  Mean: -49.2788, Std: 14.8143
+  Abs Mean: 49.2788
+
+[70] head0_hm_after_sigmoid
+  Shape: (1, 3437)
+  Range: [0.0000, 0.0001]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000
+
+[71] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.8198, 6.7359]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1731, 3.5408]
+  Channel std: 0.9826
+
+[72] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0625, 7.4387]
+  Mean: -1.2873, Std: 1.4157
+  Abs Mean: 1.5570
+  Channel mean range: [-5.7001, 3.5664]
+  Channel std: 1.4048
+
+[73] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3537, Channels: 384
+  Range: [-6.0625, 7.4387]
+  Mean: -1.0819, Std: 1.5809
+  Abs Mean: 1.5768
+  Channel mean range: [-4.8975, 2.9971]
+  Channel std: 1.2341
+
+[74] head0_hm_logits
+  Shape: (1, 3537)
+  Range: [-137.6613, -4.4702]
+  Mean: -48.9247, Std: 15.2592
+  Abs Mean: 48.9247
+
+[75] head0_hm_after_sigmoid
+  Shape: (1, 3537)
+  Range: [0.0000, 0.0113]
+  Mean: 0.0000, Std: 0.0002
+  Abs Mean: 0.0000
+
+[76] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-4.0245, 6.8595]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1736, 3.5415]
+  Channel std: 0.9828
+
+[77] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0645, 7.6826]
+  Mean: -1.2874, Std: 1.4155
+  Abs Mean: 1.5569
+  Channel mean range: [-5.7010, 3.5672]
+  Channel std: 1.4050
+
+[78] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3464, Channels: 384
+  Range: [-6.0645, 7.6826]
+  Mean: -1.0852, Std: 1.5805
+  Abs Mean: 1.5776
+  Channel mean range: [-4.9148, 3.0160]
+  Channel std: 1.2384
+
+[79] head0_hm_logits
+  Shape: (1, 3464)
+  Range: [-137.6605, -9.3876]
+  Mean: -49.3731, Std: 15.1002
+  Abs Mean: 49.3731
+
+[80] head0_hm_after_sigmoid
+  Shape: (1, 3464)
+  Range: [0.0000, 0.0001]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000
+
+[81] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.4673, 5.7404]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1736, 3.5414]
+  Channel std: 0.9828
+
+[82] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0652, 5.8356]
+  Mean: -1.2873, Std: 1.4156
+  Abs Mean: 1.5570
+  Channel mean range: [-5.7008, 3.5672]
+  Channel std: 1.4050
+
+[83] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3562, Channels: 384
+  Range: [-6.0652, 5.8356]
+  Mean: -1.0860, Std: 1.5792
+  Abs Mean: 1.5767
+  Channel mean range: [-4.9242, 3.0241]
+  Channel std: 1.2402
+
+[84] head0_hm_logits
+  Shape: (1, 3562)
+  Range: [-137.4868, -8.8264]
+  Mean: -48.9625, Std: 14.9509
+  Abs Mean: 48.9625
+
+[85] head0_hm_after_sigmoid
+  Shape: (1, 3562)
+  Range: [0.0000, 0.0001]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000
+
+[86] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.5036, 5.5699]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1749, 3.5424]
+  Channel std: 0.9831
+
+[87] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0661, 5.9138]
+  Mean: -1.2879, Std: 1.4152
+  Abs Mean: 1.5569
+  Channel mean range: [-5.7031, 3.5683]
+  Channel std: 1.4055
+
+[88] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3434, Channels: 384
+  Range: [-6.0661, 5.9138]
+  Mean: -1.0941, Std: 1.5737
+  Abs Mean: 1.5769
+  Channel mean range: [-4.9649, 3.0364]
+  Channel std: 1.2500
+
+[89] head0_hm_logits
+  Shape: (1, 3434)
+  Range: [-137.4870, -9.2268]
+  Mean: -49.0571, Std: 14.6846
+  Abs Mean: 49.0571
+
+[90] head0_hm_after_sigmoid
+  Shape: (1, 3434)
+  Range: [0.0000, 0.0001]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000
+
+[91] transformer_output_before_adapter
+  Shape: (3, 384, 188, 188)
+  Range: [-3.5679, 7.2889]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1748, 3.5425]
+  Channel std: 0.9831
+
+[92] adapter_output
+  Shape: (3, 384, 188, 188)
+  Range: [-6.0628, 7.9985]
+  Mean: -1.2878, Std: 1.4152
+  Abs Mean: 1.5570
+  Channel mean range: [-5.7030, 3.5683]
+  Channel std: 1.4055
+
+[93] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 3440, Channels: 384
+  Range: [-6.0628, 7.9985]
+  Mean: -1.0939, Std: 1.5744
+  Abs Mean: 1.5776
+  Channel mean range: [-4.9617, 3.0380]
+  Channel std: 1.2495
+
+[94] head0_hm_logits
+  Shape: (1, 3440)
+  Range: [-137.4837, -6.9352]
+  Mean: -49.2641, Std: 14.9072
+  Abs Mean: 49.2641
+
+[95] head0_hm_after_sigmoid
+  Shape: (1, 3440)
+  Range: [0.0000, 0.0010]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000
+
+[96] transformer_output_before_adapter
+  Shape: (2, 384, 188, 188)
+  Range: [-3.7185, 6.7780]
+  Mean: -0.0050, Std: 0.9863
+  Abs Mean: 0.7654
+  Channel mean range: [-3.1730, 3.5411]
+  Channel std: 0.9826
+
+[97] adapter_output
+  Shape: (2, 384, 188, 188)
+  Range: [-6.0634, 7.4544]
+  Mean: -1.2872, Std: 1.4158
+  Abs Mean: 1.5570
+  Channel mean range: [-5.6999, 3.5668]
+  Channel std: 1.4048
+
+[98] densehead_input
+  Type: SparseConvTensor
+  Active voxels: 2362, Channels: 384
+  Range: [-6.0634, 7.4544]
+  Mean: -1.0808, Std: 1.5840
+  Abs Mean: 1.5782
+  Channel mean range: [-4.9002, 3.0160]
+  Channel std: 1.2344
+
+[99] head0_hm_logits
+  Shape: (1, 2362)
+  Range: [-138.1637, -8.2280]
+  Mean: -49.3168, Std: 15.1868
+  Abs Mean: 49.3168
+
+[100] head0_hm_after_sigmoid
+  Shape: (1, 2362)
+  Range: [0.0000, 0.0003]
+  Mean: 0.0000, Std: 0.0000
+  Abs Mean: 0.0000

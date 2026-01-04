@@ -59,7 +59,9 @@ class CustomDatasetKP(DatasetTemplate):
                 self.logger.info(f'Built {len(self.infos)} sequences of length {self.sequence_length}.')
 
     def build_sequences(self, all_frame_infos):
-        # 这个版本的build_sequences是正确的，它构建的是“场景”的滑动窗口
+        """
+        构建序列，自动检测帧号间隔来避免跨越不连续的片段边界
+        """
         sequences = []
         infos_by_video = defaultdict(list)
         pattern = re.compile(r'(.*) \(Frame (\d+)\)')
@@ -71,10 +73,36 @@ class CustomDatasetKP(DatasetTemplate):
                 info['frame_num'] = int(frame_num_str)
                 infos_by_video[video_id].append(info)
 
+        # 帧号间隔阈值，超过此阈值认为是片段边界
+        frame_gap_threshold = 100
+
         for video_id, frame_infos in infos_by_video.items():
             frame_infos.sort(key=lambda e: e['frame_num'])
-            for i in range(len(frame_infos) - self.sequence_length + 1):
-                sequences.append(frame_infos[i: i + self.sequence_length])
+
+            # 检测帧号间隔，自动分割子片段
+            sub_segments = []
+            current_segment = [frame_infos[0]]
+
+            for i in range(1, len(frame_infos)):
+                frame_gap = frame_infos[i]['frame_num'] - frame_infos[i-1]['frame_num']
+                if frame_gap > frame_gap_threshold:
+                    # 发现大间隔，当前片段结束，开启新片段
+                    sub_segments.append(current_segment)
+                    current_segment = [frame_infos[i]]
+                    if self.logger is not None:
+                        self.logger.info(
+                            f'Detected segment boundary in {video_id}: '
+                            f'frame {frame_infos[i-1]["frame_num"]} -> {frame_infos[i]["frame_num"]} '
+                            f'(gap={frame_gap})'
+                        )
+                else:
+                    current_segment.append(frame_infos[i])
+            sub_segments.append(current_segment)
+
+            # 在每个子片段内部独立进行滑动窗口采样
+            for segment in sub_segments:
+                for i in range(len(segment) - self.sequence_length + 1):
+                    sequences.append(segment[i: i + self.sequence_length])
 
         return sequences
 
@@ -154,6 +182,15 @@ class CustomDatasetKP(DatasetTemplate):
             single_frame_processed_dict = self.prepare_data(data_dict=input_dict)
             processed_sequence_data.append(single_frame_processed_dict)
 
+        # DEBUG: 验证序列中每一帧是否都包含 obj_ids（可选，减少日志输出）
+        # if len(sequence_infos) > 0:
+        #     print(f"\n[DEBUG] __getitem__: sequence length={len(processed_sequence_data)}")
+        #     for t, frame_data in enumerate(processed_sequence_data):
+        #         if 'obj_ids' in frame_data:
+        #             print(f"  Frame {t}: obj_ids={frame_data['obj_ids']}")
+        #         else:
+        #             print(f"  Frame {t}: obj_ids NOT FOUND!")
+
         return processed_sequence_data
 
     def get_single_frame_info(self, frame_info):
@@ -175,8 +212,9 @@ class CustomDatasetKP(DatasetTemplate):
                 input_dict['keypoint_location'] = annos['keypoints'].reshape(-1, self.num_keypoints, 3)
                 input_dict['keypoint_visibility'] = annos['keypoints_visible'].reshape(-1, self.num_keypoints)
                 input_dict['keypoint_mask'] = annos['keypoints_visible'].reshape(-1, self.num_keypoints)
-                if 'obj_ids' in annos:
-                    input_dict['obj_ids'] = annos['obj_ids']
+                # 字段名匹配：info文件中是 'object_ids'，代码中统一使用 'obj_ids'
+                if 'object_ids' in annos:
+                    input_dict['obj_ids'] = annos['object_ids']
         return input_dict
 
     @staticmethod
@@ -188,16 +226,68 @@ class CustomDatasetKP(DatasetTemplate):
         batch_size = len(batch_list)
         sequence_length = len(batch_list[0]) if batch_size > 0 else 0
 
+        # 第一步：找到所有时间步中的最大目标数，用于统一填充
+        max_num_obj = 0
+        for b in range(batch_size):
+            for t in range(sequence_length):
+                if 'gt_boxes' in batch_list[b][t]:
+                    num_obj = len(batch_list[b][t]['gt_boxes'])
+                    max_num_obj = max(max_num_obj, num_obj)
+
+        # 确保至少有1个位置用于填充
+        max_num_obj = max(1, max_num_obj)
+
+        # 第二步：统一填充所有样本到 max_num_obj
+        for b in range(batch_size):
+            for t in range(sequence_length):
+                data_dict = batch_list[b][t]
+                if 'gt_boxes' in data_dict:
+                    num_obj = len(data_dict['gt_boxes'])
+                    if num_obj < max_num_obj:
+                        # 填充 gt_boxes
+                        pad_boxes = np.zeros((max_num_obj - num_obj, data_dict['gt_boxes'].shape[1]))
+                        data_dict['gt_boxes'] = np.concatenate([data_dict['gt_boxes'], pad_boxes], axis=0)
+
+                        # 填充 keypoint_location
+                        if 'keypoint_location' in data_dict:
+                            pad_kps = np.zeros((max_num_obj - num_obj, *data_dict['keypoint_location'].shape[1:]))
+                            data_dict['keypoint_location'] = np.concatenate([data_dict['keypoint_location'], pad_kps], axis=0)
+
+                        # 填充 keypoint_visibility
+                        if 'keypoint_visibility' in data_dict:
+                            pad_vis = np.zeros((max_num_obj - num_obj, *data_dict['keypoint_visibility'].shape[1:]))
+                            data_dict['keypoint_visibility'] = np.concatenate([data_dict['keypoint_visibility'], pad_vis], axis=0)
+
+                        # 填充 keypoint_mask（需要匹配原始的shape）
+                        if 'keypoint_mask' in data_dict:
+                            original_shape = data_dict['keypoint_mask'].shape
+                            # 创建与原始数据相同维度的填充，只是第一维（目标数）不同
+                            pad_shape = (max_num_obj - num_obj,) + original_shape[1:]
+                            pad_mask = np.zeros(pad_shape, dtype=data_dict['keypoint_mask'].dtype)
+                            data_dict['keypoint_mask'] = np.concatenate([data_dict['keypoint_mask'], pad_mask], axis=0)
+
         final_batch_dict = defaultdict(list)
 
-        # 按时间步（t）重组数据
+        # 第三步：按时间步重组数据
         for t in range(sequence_length):
             # 收集当前时间步t，在所有batch中的数据
             list_of_dicts_for_this_timestep = [batch_list[b][t] for b in range(batch_size)]
 
+            # 临时移除 obj_ids（无法stack，会在后面单独处理）
+            obj_ids_for_this_timestep = []
+            for data_dict in list_of_dicts_for_this_timestep:
+                if 'obj_ids' in data_dict:
+                    obj_ids_for_this_timestep.append(data_dict.pop('obj_ids'))
+                else:
+                    obj_ids_for_this_timestep.append(None)
+
             # 使用OpenPCDet原生的collate_batch来高效地打包单帧数据
-            # 这会自动处理体素和标注的填充
+            # 现在所有样本都已填充到相同大小，不会出现形状不一致
             collated_dict_for_this_timestep = DatasetTemplate.collate_batch(list_of_dicts_for_this_timestep)
+
+            # 将 obj_ids 重新加回去
+            if any(obj_id is not None for obj_id in obj_ids_for_this_timestep):
+                collated_dict_for_this_timestep['obj_ids'] = np.array(obj_ids_for_this_timestep, dtype=object)
 
             # 将打包好的单帧数据添加到final_batch_dict中
             for key, val in collated_dict_for_this_timestep.items():
@@ -206,7 +296,8 @@ class CustomDatasetKP(DatasetTemplate):
         # 将打包好的帧列表，最终堆叠成带有时间维度的张量
         ret = {}
         for key, val_list in final_batch_dict.items():
-            if key in ['frame_id', 'gt_names']:  # 对于非数组数据
+            # 对于非数组数据和 obj_ids，保持为列表结构
+            if key in ['frame_id', 'gt_names', 'obj_ids']:
                 ret[key] = val_list
                 continue
 
@@ -218,6 +309,19 @@ class CustomDatasetKP(DatasetTemplate):
                 ret[key] = val_list  # 暂时保持为列表
 
         ret['batch_size'] = batch_size
+
+        # DEBUG: 验证 collate_batch 后的 obj_ids 结构（可选，减少日志输出）
+        # if 'obj_ids' in ret:
+        #     print(f"\n[DEBUG] collate_batch: batch_size={batch_size}")
+        #     print(f"  obj_ids type: {type(ret['obj_ids'])}")
+        #     if isinstance(ret['obj_ids'], list):
+        #         print(f"  obj_ids length: {len(ret['obj_ids'])}")
+        #         print(f"  obj_ids[0] (first timestep): {ret['obj_ids'][0] if len(ret['obj_ids']) > 0 else 'empty'}")
+        #     else:
+        #         print(f"  obj_ids shape: {ret['obj_ids'].shape if hasattr(ret['obj_ids'], 'shape') else 'N/A'}")
+        # else:
+        #     print(f"\n[DEBUG] collate_batch: obj_ids NOT FOUND in batch_dict!")
+
         return ret
 
     def evaluation(self, det_annos, class_names, **kwargs):
@@ -229,7 +333,9 @@ class CustomDatasetKP(DatasetTemplate):
         if logger:
             logger.info('**********************Start Custom Evaluation (Visible/Invisible MPJPE)**********************')
 
-        gt_annos = [info['annos'] for info in self.infos]
+        # 修复：self.infos 包含序列（列表），需要提取每个序列的最后一帧
+        # 每个序列用于预测最后一帧，所以评估时也使用最后一帧的ground truth
+        gt_annos = [sequence[-1]['annos'] for sequence in self.infos]
 
         vis_error_sum = np.zeros(self.num_keypoints, dtype=np.float64)
         vis_count = np.zeros(self.num_keypoints, dtype=np.int64)

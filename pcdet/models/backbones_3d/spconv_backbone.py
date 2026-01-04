@@ -7,7 +7,7 @@ import torch.nn.functional as F
 from pcdet.ops.sptr.sptr import modules
 from pcdet.ops.sptr import sptr
 from pcdet.ops.sptr.sptr.position_embedding import PositionEmbeddingCoordsSine
-from timm.models.layers import DropPath, trunc_normal_
+from timm.layers import DropPath, trunc_normal_
 
 from ...utils.spconv_utils import replace_feature, spconv, SparseModule, SubMConv3d, SparseConv3d
 

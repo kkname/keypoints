@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import numbers
-from timm.models.layers import DropPath, trunc_normal_
+from timm.layers import DropPath, trunc_normal_
 from . import SparseTrTensor
 from .functional import attention_step1, attention_step2, dot_prod_with_idx, dot_prod_with_idx_all, attention_step2_with_rel_pos_value
 from .utils import to_3d_numpy, scatter_softmax_csr, get_indices_params

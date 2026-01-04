@@ -248,10 +248,12 @@ def obtain_all_geometry(
 
 
 def draw_scenes(
-    points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None,
-    gt_keypoints=None, ref_keypoints=None, point_colors=None, draw_origin=False, points_to_keep_boxes=None,
-    blocking=True
+        points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None,
+        gt_keypoints=None, ref_keypoints=None, point_colors=None, draw_origin=False, points_to_keep_boxes=None,
 ):
+    # 注意：我们删除了原函数中无用的 blocking=True 参数
+
+    # obtain_all_geometry 函数调用保持不变，它已经包含了处理ref_keypoints的逻辑
     all_geometry = obtain_all_geometry(
         points, gt_boxes=gt_boxes, ref_boxes=ref_boxes,
         ref_labels=ref_labels, ref_scores=ref_scores,
@@ -263,20 +265,25 @@ def draw_scenes(
     vis.create_window(width=1920, height=1061)
 
     vis.get_render_option().point_size = 2.0
-    vis.get_render_option().background_color = np.ones(3)
+    vis.get_render_option().background_color = np.zeros(3)  # 将背景改为黑色，看得更清楚
 
     for geo in all_geometry:
         vis.add_geometry(geo)
 
-    ctr = vis.get_view_control()
-    parameters = o3d.io.read_pinhole_camera_parameters(
-        os.path.join(os.path.dirname(__file__), "./camera_pose_2.json"))
-    ctr.convert_from_pinhole_camera_parameters(parameters)
+    # 尝试加载相机参数，如果失败则使用默认视角
+    try:
+        ctr = vis.get_view_control()
+        parameters = o3d.io.read_pinhole_camera_parameters(
+            os.path.join(os.path.dirname(__file__), "./camera_pose_2.json"))
+        ctr.convert_from_pinhole_camera_parameters(parameters)
+    except Exception:
+        pass
 
+    # --- 关键修正：添加 vis.run() 来保持窗口开启 ---
+    # vis.run()会启动一个渲染循环，程序会在这里暂停，直到您手动关闭窗口
+    print("Visualization window is open. Press 'Q' in the window to close it.")
     vis.run()
     vis.destroy_window()
-    
-    return vis
 
 
 def update_scenes(

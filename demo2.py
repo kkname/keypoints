@@ -97,9 +97,15 @@ def main():
             load_data_to_gpu(data_dict)
             pred_dicts, _ = model.forward(data_dict)
 
+            pred_kps = pred_dicts[0].get('pred_kps', None)
+
+            # 调用我们升级后的可视化函数，并传入关键点
             V.draw_scenes(
-                points=data_dict['points'][:, 1:], ref_boxes=pred_dicts[0]['pred_boxes'],
-                ref_scores=pred_dicts[0]['pred_scores'], ref_labels=pred_dicts[0]['pred_labels']
+                points=data_dict['points'][:, 1:],
+                ref_boxes=pred_dicts[0]['pred_boxes'],
+                ref_scores=pred_dicts[0]['pred_scores'],
+                ref_labels=pred_dicts[0]['pred_labels'],
+                ref_keypoints=pred_kps  # <-- 关键新增：将关键点数据传递给可视化函数
             )
 
             if not OPEN3D_FLAG:

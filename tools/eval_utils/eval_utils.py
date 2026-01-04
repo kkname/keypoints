@@ -8,6 +8,13 @@ import tqdm
 from pcdet.models import load_data_to_gpu
 from pcdet.utils import common_utils
 
+# 导入诊断工具
+try:
+    from pcdet.models.model_utils.feature_diagnostics import get_diagnostics, print_diagnostics
+    DIAGNOSTICS_AVAILABLE = True
+except ImportError:
+    DIAGNOSTICS_AVAILABLE = False
+
 
 def statistics_info(cfg, ret_dict, metric, disp_dict):
     for cur_thresh in cfg.MODEL.POST_PROCESSING.RECALL_THRESH_LIST:
@@ -52,6 +59,15 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
         )
     model.eval()
 
+    # 启用诊断并清空之前的记录
+    if DIAGNOSTICS_AVAILABLE:
+        diagnostics = get_diagnostics()
+        if diagnostics is not None:
+            diagnostics.enable()
+            diagnostics.clear()
+            if cfg.LOCAL_RANK == 0:
+                logger.info('诊断功能已启用，将在evaluation结束后打印特征统计信息')
+
     if cfg.LOCAL_RANK == 0:
         progress_bar = tqdm.tqdm(total=len(dataloader), leave=True, desc='eval', dynamic_ncols=True)
     start_time = time.time()
@@ -86,6 +102,15 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
 
     if cfg.LOCAL_RANK == 0:
         progress_bar.close()
+
+    # 打印诊断信息（如果启用）
+    if cfg.LOCAL_RANK == 0 and DIAGNOSTICS_AVAILABLE:
+        diagnostics = get_diagnostics()
+        if diagnostics is not None and len(diagnostics.logs) > 0:
+            logger.info('\n' + '='*100)
+            logger.info('特征诊断报告')
+            logger.info('='*100)
+            print_diagnostics(title=f"EPOCH {epoch_id} 特征诊断")
 
     if dist_test:
         rank, world_size = common_utils.get_dist_info()

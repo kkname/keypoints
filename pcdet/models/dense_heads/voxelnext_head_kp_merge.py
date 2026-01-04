@@ -6,6 +6,15 @@ import spconv.pytorch as spconv
 
 from .voxelnext_head_kp import VoxelNeXtHeadKP, decode_bbox_and_keypoints_from_voxels_nuscenes
 
+# 尝试导入诊断工具，如果失败则禁用诊断
+try:
+    from ..model_utils.feature_diagnostics import get_diagnostics
+    DIAGNOSTICS_AVAILABLE = True
+except ImportError:
+    DIAGNOSTICS_AVAILABLE = False
+    def get_diagnostics():
+        return None
+
 
 class VoxelNeXtHeadKPMerge(VoxelNeXtHeadKP):
 
@@ -227,15 +236,33 @@ class VoxelNeXtHeadKPMerge(VoxelNeXtHeadKP):
             x_2d = x_3d_sparse
 
         self.forward_ret_dict['batch_index'] = batch_index
-        # x = data_dict['encoded_spconv_tensor']
-        #
-        # spatial_shape, batch_index, voxel_indices, spatial_indices, num_voxels = self._get_voxel_infos(x)
-        # self.forward_ret_dict['batch_index'] = batch_index
-        # x_2d = self.shared_conv(x_2d)
-        # TODO: Merge Pedestrian and Cyclist into one class
+
+        # [诊断点4] Dense head输入
+        if not self.training and DIAGNOSTICS_AVAILABLE:
+            diagnostics = get_diagnostics()
+            if diagnostics is not None:
+                diagnostics.log_sparse_tensor(x_2d, "densehead_input")
+
         pred_dicts = []
-        for head in self.heads_list:
-            pred_dicts.append(head(x_2d))
+        for head_idx, head in enumerate(self.heads_list):
+            pred_dict = head(x_2d)
+            pred_dicts.append(pred_dict)
+
+            # [诊断点5] 记录hm输出（sigmoid前的logits）- 必须在循环内部
+            if not self.training and DIAGNOSTICS_AVAILABLE and 'hm' in pred_dict:
+                diagnostics = get_diagnostics()
+                if diagnostics is not None:
+                    hm_logits = pred_dict['hm']
+                    diagnostics.log_dense_tensor(
+                        hm_logits.unsqueeze(0) if hm_logits.ndim == 1 else hm_logits.view(1, -1),
+                        f"head{head_idx}_hm_logits"
+                    )
+                    # 计算sigmoid后的值
+                    hm_probs = torch.sigmoid(hm_logits)
+                    diagnostics.log_dense_tensor(
+                        hm_probs.unsqueeze(0) if hm_probs.ndim == 1 else hm_probs.view(1, -1),
+                        f"head{head_idx}_hm_after_sigmoid"
+                    )
 
         if self.training:
             target_dict = self.assign_targets(
