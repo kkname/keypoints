@@ -22,8 +22,6 @@ def build_network(model_cfg, num_class, dataset):
 
 def load_data_to_gpu(batch_dict):
     for key, val in batch_dict.items():
-        if isinstance(val, np.ndarray):
-            print(f"Key: {key}, Type: {val.dtype}")
 
         if key == 'camera_imgs':
             batch_dict[key] = val.cuda()

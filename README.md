@@ -22,6 +22,41 @@ Checkpoints can be downloaded from [here](https://huggingface.co/shijianjian/Vox
 $ cd tools
 $ python waymo_visualizer.py --ckpt CHECKPOINT
 ```
+## Useful code
+
+
+### run demo <br>
+
+```angular2html
+python demo2.py \
+    --cfg_file tools/cfgs/waymo_models/kp_effv2next4_voxelnext_iou_aug_bev_channel.yaml \
+    --ckpt best_model/checkpoint_epoch_500.pth \
+    --data_path data_test2
+```
+
+### run train
+
+```angular2html
+python train.py \
+    --cfg_file tools/cfgs/waymo_models/kp_effv2next4_voxelnext_iou_aug_bev_channel.yaml \
+    --pretrained_model voxelkp_checkpoint.pth
+```
+
+### run eval
+
+```angular2html
+python test.py \
+    --cfg_file tools/cfgs/waymo_models/kp_effv2next4_voxelnext_iou_aug_bev_channel.yaml \
+    --ckpt best_model/checkpoint_epoch_500.pth 
+```
+
+### tensorboard
+```angular2html
+tensorboard --logdir output/cfgs/waymo_models/kp_effv2next4_voxelnext_iou_aug_bev_channel/default/tensorboard
+```
+
+
+
 
 ## Benchmarks
 
@@ -56,9 +91,12 @@ Our visual results show that our VoxelKP offers improved keypoint estimation wit
 A visual demonstration of our baseline model (top) and the proposed VoxelKP (bottom).  The insets are color-coded according to the legend in the figure. In the green-colored insets, a comparison with the ground truth is shown, with ground truth in red and predictions in blue.
 </em>
 
+
 ## Architecture
 
 <img src="docs/arch.png">
+
+
 
 ## Acknowledgement
 This repository is built on top of `OpenPCDet` and `VoxelNeXt`.

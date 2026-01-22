@@ -18,3 +18,5 @@ version.py
 *.out
 *.err
 checkpoints
+.claude/
+.vscode/

@@ -1,6 +1,9 @@
 import argparse
 import glob
 from pathlib import Path
+import json
+from datetime import datetime
+
 
 try:
     import open3d
@@ -90,6 +93,10 @@ def main():
     model.load_params_from_file(filename=args.ckpt, logger=logger, to_cpu=True)
     model.cuda()
     model.eval()
+
+    output_dir = Path("prediction_results")
+    output_dir.mkdir(exist_ok=True)
+
     with torch.no_grad():
         for idx, data_dict in enumerate(demo_dataset):
             logger.info(f'Visualized sample index: \t{idx + 1}')
@@ -110,6 +117,63 @@ def main():
 
             if not OPEN3D_FLAG:
                 mlab.show(stop=True)
+
+            # 修复变量赋值错误（移除多余的逗号，避免元组类型）
+            ref_boxes = pred_dicts[0]['pred_boxes']  # 移除逗号
+            ref_scores = pred_dicts[0]['pred_scores']  # 移除逗号
+            ref_labels = pred_dicts[0]['pred_labels']  # 移除逗号
+
+            # 转换为numpy数组处理
+            ref_boxes_np = ref_boxes.cpu().numpy()
+            ref_scores_np = ref_scores.cpu().numpy()
+            ref_labels_np = ref_labels.cpu().numpy()
+
+            json_data = []
+            num_objects = len(ref_boxes_np)
+            logger.info(f'Detected {num_objects} objects in this frame')
+
+            # 获取当前处理的点云文件名（用于JSON命名）
+            current_file = Path(demo_dataset.sample_file_list[idx]).stem
+
+            for i in range(num_objects):
+                # 只处理人体类别（假设标签1对应Human，根据实际配置修改）
+                if ref_labels_np[i] != 1:
+                    continue
+
+                # 解析3D框数据
+                box = ref_boxes_np[i]
+                box_3d = {
+                    "center": box[:3].tolist(),  # x, y, z
+                    "size": box[3:6].tolist(),  # l, w, h
+                    "heading": float(box[6]),  # 朝向角
+                    "score": float(ref_scores_np[i])  # 新增置信度
+                }
+
+                # 解析关键点数据
+                keypoints = []
+                keypoints_visible = []
+                if pred_kps is not None and i < len(pred_kps):
+                    kps = pred_kps[i].cpu().numpy()  # [14, 3] 假设14个关键点
+                    keypoints = kps.tolist()
+                    keypoints_visible = [1] * len(kps)  # 若有可见性信息可替换
+
+                # 构造单个人体的JSON条目
+                obj_data = {
+                    "class": "Human",
+                    "object_id": f"person_{i:02d}",
+                    "box_3d": box_3d,
+                    "keypoints": keypoints,
+                    "keypoints_visible": keypoints_visible
+                }
+                json_data.append(obj_data)
+
+            # 导出JSON文件（使用原文件名+时间戳避免重复）
+            if json_data:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_file = output_dir / f"{current_file}_{timestamp}_Frame-{idx}.json"
+                with open(output_file, "w") as f:
+                    json.dump(json_data, f, indent=2)
+                logger.info(f"预测结果已保存至: {output_file}")
 
     logger.info('Demo done.')
 

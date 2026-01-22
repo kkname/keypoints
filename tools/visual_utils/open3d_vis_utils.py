@@ -1,8 +1,3 @@
-"""
-Open3d visualization tool box
-Written by Jihan YANG
-All rights preserved from 2021 - present.
-"""
 import os
 import open3d
 import open3d as o3d
@@ -16,27 +11,43 @@ from pcdet.ops.roiaware_pool3d import roiaware_pool3d_utils
 
 box_colormap = [
     [1, 1, 1],
-    [.4, .2, .4],
+    [0.4, 0.2, 0.4],
     [0, 1, 1],
     [1, 1, 0],
+]
+
+SKELETON_CONNECTIONS = [
+    [0, 13],  # nose-head
+    [1, 2],  # left_shoulder-right_shoulder
+    [1, 3],  # left_shoulder-left_elbow
+    [3, 5],  # left_elbow-left_wrist
+    [2, 4],  # right_shoulder-right_elbow
+    [4, 6],  # right_elbow-right_wrist
+    [1, 7],  # left_shoulder-left_hip
+    [2, 8],  # right_shoulder-right_hip
+    [7, 8],  # left_hip-right_hip
+    [7, 9],  # left_hip-left_knee
+    [9, 11],  # left_knee-left_ankle
+    [8, 10],  # right_hip-right_knee
+    [10, 12]  # right_knee-right_ankle
 ]
 
 
 def create_arrow(pos=[0, 0, 0], degree=0, color=[1, 0, 0]):
     length = 0.5
     radius = 0.05
-    
+
     arrow = open3d.geometry.TriangleMesh.create_arrow(
-        cylinder_radius=radius, cone_radius=radius * 2, cylinder_height=length, cone_height=length/2)
+        cylinder_radius=radius, cone_radius=radius * 2, cylinder_height=length, cone_height=length / 2)
     arrow.compute_vertex_normals()
-    arrow.paint_uniform_color(color) # Red color
+    arrow.paint_uniform_color(color)  # Red color
     import math
     radian = math.radians(degree)
-    rotation_axis = [0, math.radians(90), radian] # rotate around z-axis
-    R = arrow.get_rotation_matrix_from_axis_angle(rotation_axis) 
+    rotation_axis = [0, math.radians(90), radian]  # rotate around z-axis
+    R = arrow.get_rotation_matrix_from_axis_angle(rotation_axis)
     arrow.rotate(R, center=[0, 0, 0])
     arrow.translate(pos)
-    
+
     return arrow
 
 
@@ -51,13 +62,12 @@ def get_coor_colors(obj_labels):
     colors = matplotlib.colors.XKCD_COLORS.values()
     max_color_num = obj_labels.max()
 
-    color_list = list(colors)[:max_color_num+1]
+    color_list = list(colors)[:max_color_num + 1]
     colors_rgba = [matplotlib.colors.to_rgba_array(color) for color in color_list]
     label_rgba = np.array(colors_rgba)[obj_labels]
     label_rgba = label_rgba.squeeze()[:, :3]
 
     return label_rgba
-
 
 
 def remove_background_points(points, boxes3d):
@@ -69,7 +79,8 @@ def remove_background_points(points, boxes3d):
     Returns:
 
     """
-    point_masks = roiaware_pool3d_utils.points_in_boxes_cpu(points[:, 0:3], boxes3d[:, :7] + np.array([[0, 0, 0, 0.1, 0.1, 0.1, 0]]))
+    point_masks = roiaware_pool3d_utils.points_in_boxes_cpu(points[:, 0:3],
+                                                            boxes3d[:, :7] + np.array([[0, 0, 0, 0.1, 0.1, 0.1, 0]]))
     points = points[~(point_masks.sum(axis=0) == 0)]
 
     return points
@@ -167,8 +178,8 @@ class LineMesh(object):
 
 
 def obtain_all_geometry(
-    points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None,
-    gt_keypoints=None, ref_keypoints=None, point_colors=None, draw_origin=False, points_to_keep_boxes=None,
+        points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None,
+        gt_keypoints=None, ref_keypoints=None, point_colors=None, draw_origin=False, points_to_keep_boxes=None,
 ):
     if isinstance(points, torch.Tensor):
         points = points.cpu().numpy()
@@ -200,8 +211,9 @@ def obtain_all_geometry(
     #     pts.colors = open3d.utility.Vector3dVector(point_colors)
 
     if point_colors is None:
-        # 所有点都设置为白色
-        pts.colors = open3d.utility.Vector3dVector(np.zeros((points.shape[0], 3)))  # 纯白色 (1,1,1)
+        # 所有点设置为紫色 (R=0.6, G=0.2, B=0.8)
+        purple_color = np.tile([0.4, 0.1, 0.8], (points.shape[0], 1))  # 生成N行紫色数组
+        pts.colors = open3d.utility.Vector3dVector(purple_color)
     else:
         pts.colors = open3d.utility.Vector3dVector(point_colors)
 
@@ -213,29 +225,47 @@ def obtain_all_geometry(
         all_geometry.append(axis_pcd)
 
     if gt_boxes is not None:
-        box_geo = draw_box(gt_boxes, (.8, .2, .8))
+        box_geo = draw_box(gt_boxes, (0.8, 0.2, 0.8))
         all_geometry.extend(box_geo)
 
     if ref_boxes is not None:
-        box_geo = draw_box(ref_boxes, (.4, .2, .4), ref_labels, ref_scores)
+        box_geo = draw_box(ref_boxes, (0.4, 0.2, 0.4), ref_labels, ref_scores)
         all_geometry.extend(box_geo)
 
+    # if gt_keypoints is not None:
+    #     kp_geo = draw_human(gt_keypoints, (1, 0.2, 0.5))
+    #     all_geometry.extend(kp_geo)
+    #
+    # if ref_keypoints is not None:
+    #     kp_geo = draw_human(ref_keypoints, (1.0, 0.0, 0.2))
+    #     all_geometry.extend(kp_geo)
+
     if gt_keypoints is not None:
-        kp_geo = draw_human(gt_keypoints, (1, .2, .5))
+        kp_geo = draw_human(
+            gt_keypoints,
+            point_color=(0.0, 0.4, 0.6),  # 亮绿关键点
+            line_color=(0.2, 0.8, 0.2)  # # 深蓝绿骨架
+        )
         all_geometry.extend(kp_geo)
-    
+
     if ref_keypoints is not None:
-        kp_geo = draw_human(ref_keypoints, (1., 0., .2))
+        kp_geo = draw_human(
+            ref_keypoints,
+            point_color=(1.0, 0.0, 0.0),
+            line_color=(0.9, 0.6, 0.1)
+        )
         all_geometry.extend(kp_geo)
 
     return all_geometry
 
 
 def draw_scenes(
-    points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None,
-    gt_keypoints=None, ref_keypoints=None, point_colors=None, draw_origin=False, points_to_keep_boxes=None,
-    blocking=True
+        points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None,
+        gt_keypoints=None, ref_keypoints=None, point_colors=None, draw_origin=False, points_to_keep_boxes=None,
 ):
+    # 注意：我们删除了原函数中无用的 blocking=True 参数
+
+    # obtain_all_geometry 函数调用保持不变，它已经包含了处理ref_keypoints的逻辑
     all_geometry = obtain_all_geometry(
         points, gt_boxes=gt_boxes, ref_boxes=ref_boxes,
         ref_labels=ref_labels, ref_scores=ref_scores,
@@ -247,43 +277,25 @@ def draw_scenes(
     vis.create_window(width=1920, height=1061)
 
     vis.get_render_option().point_size = 2.0
-    vis.get_render_option().background_color = np.ones(3)
+    vis.get_render_option().background_color = np.array([0.9, 0.9, 0.9])  # 设置背景颜色为黑色
 
     for geo in all_geometry:
         vis.add_geometry(geo)
 
-    ctr = vis.get_view_control()
-    parameters = o3d.io.read_pinhole_camera_parameters(
-        os.path.join(os.path.dirname(__file__), "./camera_pose_2.json"))
-    ctr.convert_from_pinhole_camera_parameters(parameters)
-    
-    return vis
+    # 尝试加载相机参数，如果失败则使用默认视角
+    try:
+        ctr = vis.get_view_control()
+        parameters = o3d.io.read_pinhole_camera_parameters(
+            os.path.join(os.path.dirname(__file__), "./camera_pose_2.json"))
+        ctr.convert_from_pinhole_camera_parameters(parameters)
+    except Exception:
+        pass
 
-
-def update_scenes(
-    vis, points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None,
-    gt_keypoints=None, ref_keypoints=None, point_colors=None, draw_origin=False, points_to_keep_boxes=None,
-):
-    all_geometry = obtain_all_geometry(
-        points, gt_boxes=gt_boxes, ref_boxes=ref_boxes,
-        ref_labels=ref_labels, ref_scores=ref_scores,
-        gt_keypoints=gt_keypoints, ref_keypoints=ref_keypoints,
-        point_colors=point_colors, draw_origin=draw_origin, points_to_keep_boxes=points_to_keep_boxes,
-    )
-
-    vis.update_geometry(all_geometry[0])
-    for geo in all_geometry[1:]:
-        vis.add_geometry(geo)
-
-    ctr = vis.get_view_control()
-    parameters = o3d.io.read_pinhole_camera_parameters(
-        os.path.join(os.path.dirname(__file__), "./camera_pose.json"))
-    ctr.convert_from_pinhole_camera_parameters(parameters)
-
-    vis.poll_events()
-    vis.update_renderer()
-
-    return vis
+    # --- 关键修正：添加 vis.run() 来保持窗口开启 ---
+    # vis.run()会启动一个渲染循环，程序会在这里暂停，直到您手动关闭窗口
+    print("Visualization window is open. Press 'Q' in the window to close it.")
+    vis.run()
+    vis.destroy_window()
 
 
 def translate_boxes_to_open3d_instance(gt_boxes):
@@ -329,7 +341,7 @@ def draw_box(gt_boxes, color=(0, 1, 0), ref_labels=None, score=None, angle=False
     return all_geo
 
 
-def draw_human(keypoints, color=(0.333, 0.333, 1.0)):
+def draw_human(keypoints, point_color=(0.95, 0.9, 0.5), line_color=(0.0, 0.3, 1.0)):
     all_geo = []
 
     for points in keypoints:
@@ -338,24 +350,92 @@ def draw_human(keypoints, color=(0.333, 0.333, 1.0)):
         points = np.concatenate([points, [mid_hip, mid_shoulder]], axis=0)
 
         lines = [
-            [13, 14],  # spine
+            [13, 15], [14, 15],  # spine
             [15, 1], [1, 3], [3, 5],  # upper, left
             [15, 2], [2, 4], [4, 6],  # upper, right
             [7, 9], [9, 11],  # bottom, left
             [8, 10], [10, 12],  # bottom, right
             [14, 7], [14, 8]  # spine to hip
         ]
-        colors = [color for i in range(len(lines))]
+        # colors = [color for i in range(len(lines))]
         # line_set = open3d.geometry.LineSet()
         # line_set.points = open3d.utility.Vector3dVector(points)
         # line_set.lines = open3d.utility.Vector2iVector(lines)
         # line_set.colors = open3d.utility.Vector3dVector(colors)
         # vis.add_geometry(line_set)
 
-        line_mesh = LineMesh(points, lines, colors, radius=0.02)
-        #line_mesh.add_line(vis)
+        line_mesh = LineMesh(points, lines, [line_color] * len(lines), radius=0.01)
+        # line_mesh.add_line(vis)
+
+        for i, point in enumerate(points):
+            if i == 0:  # Skip the nose (first point)
+                continue
+            sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.015)
+            sphere.translate(point)
+            sphere.paint_uniform_color(point_color)
+            all_geo.append(sphere)
 
         for cylinder in line_mesh.cylinder_segments:
             all_geo.append(cylinder)
 
     return all_geo
+
+
+class PlaybackVisualizer(object):
+    def __init__(self, point_size=1.5, background_color=[0, 0, 0]):
+        self.vis = o3d.visualization.Visualizer()
+        self.vis.create_window(window_name='VoxelKP Continuous Playback', width=1920, height=1080)
+
+        render_option = self.vis.get_render_option()
+        render_option.point_size = point_size
+        render_option.background_color = np.asarray(background_color)
+
+        # 初始化一个空的点云几何体，后续只更新它的点
+        self.pcd = o3d.geometry.PointCloud()
+        self.vis.add_geometry(self.pcd)
+
+        # 初始化坐标系
+        axis_pcd = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
+        self.vis.add_geometry(axis_pcd)
+
+        # 用于存储上一帧的动态几何体（框和骨骼）
+        self.last_geometries = []
+
+        # 尝试设置初始视角
+        try:
+            ctr = self.vis.get_view_control()
+            param = o3d.io.read_pinhole_camera_parameters("tools/visual_utils/my_camera_pose.json")
+            ctr.convert_from_pinhole_camera_parameters(param)
+        except Exception:
+            pass
+
+    def update(self, points, ref_boxes=None, ref_keypoints=None):
+        # 1. 清除上一帧的动态几何体（框和骨骼）
+        for geom in self.last_geometries:
+            self.vis.remove_geometry(geom, reset_bounding_box=False)
+        self.last_geometries = []
+
+        # 2. 更新点云（这是最高效的方式，不会闪烁）
+        if isinstance(points, torch.Tensor):
+            points = points.cpu().numpy()
+        self.pcd.points = o3d.utility.Vector3dVector(points[:, :3])
+        self.vis.update_geometry(self.pcd)
+
+        # 3. 创建并添加新一帧的动态几何体
+        # 我们复用文件中已有的obtain_all_geometry函数来创建
+        new_geometries = obtain_all_geometry(
+            points=np.zeros((0, 3)),  # 传入空点云，因为它已单独处理
+            ref_boxes=ref_boxes,
+            ref_keypoints=ref_keypoints,
+            draw_origin=False
+        )
+        for geom in new_geometries:
+            self.vis.add_geometry(geom, reset_bounding_box=False)
+            self.last_geometries.append(geom)
+
+        # 4. 刷新窗口
+        self.vis.poll_events()
+        self.vis.update_renderer()
+
+    def close(self):
+        self.vis.destroy_window()

@@ -116,10 +116,16 @@ def eval_one_epoch(cfg, args, model, dataloader, epoch_id, logger, dist_test=Fal
         ret_dict['recall/rcnn_%s' % str(cur_thresh)] = cur_rcnn_recall
 
     total_pred_objects = 0
-    for anno in det_annos:
-        total_pred_objects += anno['name'].__len__()
-    logger.info('Average predicted number of objects(%d samples): %.3f'
-                % (len(det_annos), total_pred_objects / max(1, len(det_annos))))
+    for annos_per_sample in det_annos:
+        # 内层列表的长度，就是该样本中预测出的物体数量
+        total_pred_objects += len(annos_per_sample)
+
+    logger.info(
+        f'Average predicted number of objects({len(det_annos)} samples): {total_pred_objects / max(1, len(det_annos)):.3f}')
+    # for anno in det_annos:
+    #     total_pred_objects += anno['name'].__len__()
+    # logger.info('Average predicted number of objects(%d samples): %.3f'
+    #             % (len(det_annos), total_pred_objects / max(1, len(det_annos))))
 
     with open(result_dir / 'result.pkl', 'wb') as f:
         pickle.dump(det_annos, f)
