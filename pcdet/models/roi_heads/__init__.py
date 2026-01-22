@@ -6,6 +6,7 @@ from .pvrcnn_head_kp_v2 import PVRCNNHeadKPV2
 from .pvrcnn_head_kp_multihead import PVRCNNHeadKPMultihead
 from .second_head import SECONDHead
 from .voxelrcnn_head import VoxelRCNNHead
+from .voxelrcnn_head_kp import VoxelRCNNHeadKP
 from .roi_head_template import RoIHeadTemplate
 from .mppnet_head import MPPNetHead
 from .mppnet_memory_bank_e2e import MPPNetHeadE2E
@@ -20,6 +21,7 @@ __all__ = {
     'SECONDHead': SECONDHead,
     'PointRCNNHead': PointRCNNHead,
     'VoxelRCNNHead': VoxelRCNNHead,
+    'VoxelRCNNHeadKP': VoxelRCNNHeadKP,
     'MPPNetHead': MPPNetHead,
     'MPPNetHeadE2E': MPPNetHeadE2E,
 }

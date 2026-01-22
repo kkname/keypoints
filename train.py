@@ -43,6 +43,7 @@ def parse_config():
     parser.add_argument('--start_epoch', type=int, default=0, help='')
     parser.add_argument('--num_epochs_to_eval', type=int, default=0, help='number of checkpoints to be evaluated')
     parser.add_argument('--save_to_file', action='store_true', default=False, help='')
+    parser.add_argument('--val_interval', type=int, default=1, help='run validation every N epochs (0 to disable)')
     
     parser.add_argument('--use_tqdm_to_record', action='store_true', default=False, help='if True, the intermediate losses will not be logged to file, only tqdm will be used')
     parser.add_argument('--logger_iter_interval', type=int, default=50, help='')
@@ -129,6 +130,17 @@ def main():
         seed=666 if args.fix_random_seed else None
     )
 
+    val_loader = None
+    if args.val_interval > 0:
+        _, val_loader, _ = build_dataloader(
+            dataset_cfg=cfg.DATA_CONFIG,
+            class_names=cfg.CLASS_NAMES,
+            batch_size=args.batch_size,
+            dist=dist_train, workers=args.workers,
+            logger=logger,
+            training=False
+        )
+
     model = build_network(model_cfg=cfg.MODEL, num_class=len(cfg.CLASS_NAMES), dataset=train_set)
     if args.sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -199,7 +211,11 @@ def main():
         use_logger_to_record=not args.use_tqdm_to_record, 
         show_gpu_stat=not args.wo_gpu_stat,
         use_amp=args.use_amp,
-        cfg=cfg
+        cfg=cfg,
+        val_loader=val_loader,
+        val_interval=args.val_interval,
+        val_args=args,
+        dist_test=dist_train
     )
 
     if hasattr(train_set, 'use_shared_memory') and train_set.use_shared_memory:

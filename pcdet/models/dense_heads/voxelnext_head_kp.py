@@ -141,8 +141,95 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
         distances = ((voxel_indices - center.unsqueeze(0))**2).sum(-1)
         return distances
 
+    def assign_targets(self, gt_boxes, gt_kps, gt_kps_vis, num_voxels, spatial_indices, spatial_shape):
+        """
+        Args:
+            gt_boxes: (B, M, 8)
+            gt_kps: (B, M, 14, 3)
+            gt_kps_vis: (B, M, 14)
+        Returns:
+        """
+        target_assigner_cfg = self.model_cfg.TARGET_ASSIGNER_CONFIG
+        batch_size = gt_boxes.shape[0]
+
+        ret_dict = {
+            'heatmaps': [],
+            'target_boxes': [],
+            'target_kps': [],
+            'target_kps_vis': [],
+            'inds': [],
+            'masks': [],
+            'heatmap_masks': [],
+            'gt_boxes': []
+        }
+
+        all_names = np.array(['bg', *self.class_names])
+        for idx, cur_class_names in enumerate(self.class_names_each_head):
+            heatmap_list, target_boxes_list, target_kps_list, target_kps_vis_list, inds_list, masks_list, gt_boxes_list = [], [], [], [], [], [], []
+            for bs_idx in range(batch_size):
+                cur_gt_boxes = gt_boxes[bs_idx]
+                cur_gt_kps = gt_kps[bs_idx]
+                cur_gt_kps_vis = gt_kps_vis[bs_idx]
+                gt_class_names = all_names[cur_gt_boxes[:, -1].cpu().long().numpy()]
+
+                gt_boxes_single_head = []
+                kps_single_head = []
+                kps_vis_single_head = []
+
+                for class_idx, name in enumerate(gt_class_names):
+                    if name not in cur_class_names:
+                        continue
+
+                    temp_box = cur_gt_boxes[class_idx]
+                    temp_box[-1] = cur_class_names.index(name) + 1
+                    gt_boxes_single_head.append(temp_box[None, :])
+                    kps_single_head.append(cur_gt_kps[class_idx][None, ...])
+                    kps_vis_single_head.append(cur_gt_kps_vis[class_idx][None, ...])
+
+                if len(gt_boxes_single_head) == 0:
+                    gt_boxes_single_head = cur_gt_boxes[:0, :]
+                    kps_single_head = cur_gt_kps[:0, ...]
+                    kps_vis_single_head = cur_gt_kps_vis[:0, ...]
+                else:
+                    gt_boxes_single_head = torch.cat(gt_boxes_single_head, dim=0)
+                    kps_single_head = torch.cat(kps_single_head, dim=0)
+                    kps_vis_single_head = torch.cat(kps_vis_single_head, dim=0)
+
+                # 在这里调用“专员”函数
+                heatmap, ret_boxes, ret_kps, inds, mask = self.assign_target_of_single_head(
+                    num_classes=len(cur_class_names),
+                    gt_boxes=gt_boxes_single_head,
+                    gt_keypoints=kps_single_head,
+                    gt_keypoints_vis=kps_vis_single_head,
+                    num_voxels=num_voxels[bs_idx],
+                    spatial_indices=spatial_indices[bs_idx],
+                    spatial_shape=spatial_shape,
+                    feature_map_stride=target_assigner_cfg.FEATURE_MAP_STRIDE,
+                    num_max_objs=target_assigner_cfg.NUM_MAX_OBJS,
+                    gaussian_overlap=target_assigner_cfg.GAUSSIAN_OVERLAP,
+                    min_radius=target_assigner_cfg.MIN_RADIUS,
+                )
+
+                heatmap_list.append(heatmap.to(gt_boxes_single_head.device))
+                target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
+                target_kps_list.append(ret_kps[..., :3].to(gt_boxes_single_head.device))
+                target_kps_vis_list.append(ret_kps[..., 3].to(gt_boxes_single_head.device))
+                inds_list.append(inds.to(gt_boxes_single_head.device))
+                masks_list.append(mask.to(gt_boxes_single_head.device))
+                gt_boxes_list.append(gt_boxes_single_head[:, :-1])
+
+            ret_dict['heatmaps'].append(torch.cat(heatmap_list, dim=1).permute(1, 0))
+            ret_dict['target_boxes'].append(torch.stack(target_boxes_list, dim=0))
+            ret_dict['target_kps'].append(torch.stack(target_kps_list, dim=0))
+            ret_dict['target_kps_vis'].append(torch.stack(target_kps_vis_list, dim=0))
+            ret_dict['inds'].append(torch.stack(inds_list, dim=0))
+            ret_dict['masks'].append(torch.stack(masks_list, dim=0))
+            ret_dict['gt_boxes'].append(gt_boxes_list)
+
+        return ret_dict
+
     def assign_target_of_single_head(
-            self, num_classes, gt_boxes, gt_keypoints, num_voxels, spatial_indices, spatial_shape, feature_map_stride, num_max_objs=500,
+            self, num_classes, gt_boxes, gt_keypoints, gt_keypoints_vis, num_voxels, spatial_indices, spatial_shape, feature_map_stride, num_max_objs=500,
             gaussian_overlap=0.1, min_radius=2
     ):
         """
@@ -179,10 +266,10 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
         radius = torch.clamp_min(radius.int(), min=min_radius)
 
         # Keypoints part
-        ret_kps = gt_boxes.new_zeros((num_max_objs, gt_keypoints.shape[-2], gt_keypoints.shape[-1]))
+        ret_kps = gt_boxes.new_zeros((num_max_objs, gt_keypoints.shape[-2], 4))
 
-        keypoint_x, keypoint_y, keypoint_z, keypoint_vis = gt_keypoints[..., 0], gt_keypoints[..., 1], gt_keypoints[..., 2], gt_keypoints[..., 3]
-
+        keypoint_x, keypoint_y, keypoint_z  = gt_keypoints[..., 0], gt_keypoints[..., 1], gt_keypoints[..., 2]
+        keypoint_vis = gt_keypoints_vis
         dx_kp = (keypoint_x - self.point_cloud_range[0]) / self.voxel_size[0] / feature_map_stride
         dy_kp = (keypoint_y - self.point_cloud_range[1]) / self.voxel_size[1] / feature_map_stride
 
@@ -243,51 +330,75 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
             target_boxes = target_dicts['target_boxes'][idx]
             target_kps = target_dicts['target_kps'][idx]
             target_kps_vis = target_dicts['target_kps_vis'][idx]
-            pred_boxes = torch.cat([pred_dict[head_name] for head_name in self.separate_head_cfg.HEAD_ORDER], dim=1)
-            # torch.Size([66248, 8]
-            pred_kp_x = pred_dict["kp_x"]
-            pred_kp_y = pred_dict["kp_y"]
-            pred_kp_z = pred_dict["kp_z"]
-            pred_kp_vis = pred_dict["kp_vis"]
-            # torch.Size([66248, 14, 3])
 
+            # 1. 正确构建8维的预测框 (pred_boxes)
+            center_offset = torch.cat([pred_dict["loc_x"][..., 0:1], pred_dict["loc_y"][..., 0:1]], dim=-1)
+            center_z = pred_dict["loc_z"][..., 0:1]
+            dim = pred_dict['dim']
+            rot = pred_dict['rot']
+            pred_boxes = torch.cat([center_offset, center_z, dim, rot], dim=1)
+
+            # 2. 从 pred_dict 中获取完整的15通道关键点预测
+            pred_kp_x_full = pred_dict["loc_x"]
+            pred_kp_y_full = pred_dict["loc_y"]
+            pred_kp_z_full = pred_dict["loc_z"]
+            pred_kp_vis = pred_dict["kp_vis"]
+
+            # 3. 【核心修正】对预测进行切片，只取后14个通道用于关键点损失计算
+            # 这样，它们的维度就能从 (N, 15) 变为 (N, 14)，与真值匹配
+            pred_kp_x_for_loss = pred_kp_x_full[:, 1:]
+            pred_kp_y_for_loss = pred_kp_y_full[:, 1:]
+            pred_kp_z_for_loss = pred_kp_z_full[:, 1:]
+
+            # 边界框回归损失 (使用完整的8维 pred_boxes)
             reg_loss = self.reg_loss_func(
                 pred_boxes, target_dicts['masks'][idx], target_dicts['inds'][idx], target_boxes, batch_index
             )
 
+            # 骨骼损失 (使用切片后的14维 pred_kp_*_for_loss)
             bone_loss = self.bone_loss_func(
-                torch.stack([pred_kp_x, pred_kp_y, pred_kp_z], dim=-1),
+                torch.stack([pred_kp_x_for_loss, pred_kp_y_for_loss, pred_kp_z_for_loss], dim=-1),
                 target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps, batch_index
             )
+
+            # 可见性损失 (pred_kp_vis 本身就是14维，无需切片)
             reg_kp_vis_loss = self.reg_loss_func(
                 pred_kp_vis, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps_vis, batch_index
             )
 
+            # 关键点坐标回归损失 (同样使用切片后的14维 pred_kp_*_for_loss)
             reg_kp_x_loss = self.reg_loss_func(
-                pred_kp_x, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 0], batch_index
+                pred_kp_x_for_loss, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 0],
+                batch_index
             )
             reg_kp_y_loss = self.reg_loss_func(
-                pred_kp_y, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 1], batch_index
+                pred_kp_y_for_loss, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 1],
+                batch_index
             )
             reg_kp_z_loss = self.reg_loss_func(
-                pred_kp_z, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 2], batch_index
+                pred_kp_z_for_loss, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 2],
+                batch_index
             )
 
             loc_loss = (reg_loss * reg_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights'])).sum()
             loc_loss = loc_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
 
-            reg_kp_vis_loss = (reg_kp_vis_loss * reg_kp_vis_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_code_weights'])).mean()
+            reg_kp_vis_loss = (reg_kp_vis_loss * reg_kp_vis_loss.new_tensor(
+                self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_code_weights'])).mean()
             reg_kp_vis_loss = reg_kp_vis_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_weights']
 
             bone_loss = bone_loss.mean() * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_weights']
 
-            reg_kp_x_loss = (reg_kp_x_loss * reg_kp_x_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_x_code_weights'])).sum()
+            reg_kp_x_loss = (reg_kp_x_loss * reg_kp_x_loss.new_tensor(
+                self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_x_code_weights'])).sum()
             reg_kp_x_loss = reg_kp_x_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_x_loc_weight']
 
-            reg_kp_y_loss = (reg_kp_y_loss * reg_kp_y_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_y_code_weights'])).sum()
+            reg_kp_y_loss = (reg_kp_y_loss * reg_kp_y_loss.new_tensor(
+                self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_y_code_weights'])).sum()
             reg_kp_y_loss = reg_kp_y_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_y_loc_weight']
 
-            reg_kp_z_loss = (reg_kp_z_loss * reg_kp_z_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_z_code_weights'])).sum()
+            reg_kp_z_loss = (reg_kp_z_loss * reg_kp_z_loss.new_tensor(
+                self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_z_code_weights'])).sum()
             reg_kp_z_loss = reg_kp_z_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_z_loc_weight']
 
             reg_kp_loss = (reg_kp_x_loss + reg_kp_y_loss + reg_kp_z_loss) / 3
@@ -306,12 +417,14 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
                 batch_box_preds = self._get_predicted_boxes(pred_dict, spatial_indices)
                 pred_boxes_for_iou = batch_box_preds.detach()
                 iou_loss = self.crit_iou(pred_dict['iou'], target_dicts['masks'][idx], target_dicts['inds'][idx],
-                                            pred_boxes_for_iou, target_dicts['gt_boxes'][idx], batch_indices)
+                                         pred_boxes_for_iou, target_dicts['gt_boxes'][idx], batch_indices)
 
                 iou_reg_loss = self.crit_iou_reg(batch_box_preds, target_dicts['masks'][idx], target_dicts['inds'][idx],
-                                                    target_dicts['gt_boxes'][idx], batch_indices)
-                iou_weight = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['iou_weight'] if 'iou_weight' in self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS else self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
-                iou_reg_loss = iou_reg_loss * iou_weight  # self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
+                                                 target_dicts['gt_boxes'][idx], batch_indices)
+                iou_weight = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS[
+                    'iou_weight'] if 'iou_weight' in self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS else \
+                self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
+                iou_reg_loss = iou_reg_loss * iou_weight
 
                 loss += (hm_loss + (loc_loss + reg_kp_loss) / 2 + reg_kp_vis_loss + iou_loss + iou_reg_loss)
                 tb_dict['iou_loss_head_%d' % idx] = iou_loss.item()
@@ -321,6 +434,114 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
 
         tb_dict['rpn_loss'] = loss.item()
         return loss, tb_dict
+
+    # def get_loss(self):
+    #
+    #     pred_dicts = self.forward_ret_dict['pred_dicts']
+    #     target_dicts = self.forward_ret_dict['target_dicts']
+    #     batch_index = self.forward_ret_dict['batch_index']
+    #
+    #     tb_dict = {}
+    #     loss = 0
+    #     batch_indices = self.forward_ret_dict['voxel_indices'][:, 0]
+    #     spatial_indices = self.forward_ret_dict['voxel_indices'][:, 1:]
+    #
+    #     for idx, pred_dict in enumerate(pred_dicts):
+    #         pred_dict['hm'] = self.sigmoid(pred_dict['hm'])
+    #         hm_loss = self.hm_loss_func(pred_dict['hm'], target_dicts['heatmaps'][idx])
+    #         hm_loss *= self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['cls_weight']
+    #
+    #         target_boxes = target_dicts['target_boxes'][idx]
+    #         target_kps = target_dicts['target_kps'][idx]
+    #         target_kps_vis = target_dicts['target_kps_vis'][idx]
+    #         # 从 'loc_x', 'loc_y', 'loc_z' 的输出中提取中心点偏移的预测值
+    #         # 每个loc头的输出是(N, 15)，我们只需要第一个值作为中心点偏移
+    #         center_offset = torch.cat([pred_dict["loc_x"][..., 0:1], pred_dict["loc_y"][..., 0:1]], dim=-1)
+    #         center_z = pred_dict["loc_z"][..., 0:1]
+    #
+    #         # 获取维度和旋转的预测值
+    #         dim = pred_dict['dim']
+    #         rot = pred_dict['rot']
+    #
+    #         # 按照 target_boxes 的 (center_xy, center_z, dim, rot) 顺序拼接
+    #         pred_boxes = torch.cat([center_offset, center_z, dim, rot], dim=1)
+    #         # torch.Size([66248, 8]
+    #         pred_kp_x = pred_dict["loc_x"]
+    #         pred_kp_y = pred_dict["loc_y"]
+    #         pred_kp_z = pred_dict["loc_z"]
+    #         pred_kp_vis = pred_dict["kp_vis"]
+    #         # torch.Size([66248, 14, 3])
+    #
+    #         reg_loss = self.reg_loss_func(
+    #             pred_boxes, target_dicts['masks'][idx], target_dicts['inds'][idx], target_boxes, batch_index
+    #         )
+    #
+    #         bone_loss = self.bone_loss_func(
+    #             torch.stack([pred_kp_x, pred_kp_y, pred_kp_z], dim=-1),
+    #             target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps, batch_index
+    #         )
+    #         reg_kp_vis_loss = self.reg_loss_func(
+    #             pred_kp_vis, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps_vis, batch_index
+    #         )
+    #
+    #         reg_kp_x_loss = self.reg_loss_func(
+    #             pred_kp_x[:, 1:], target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 0], batch_index
+    #         )
+    #         reg_kp_y_loss = self.reg_loss_func(
+    #             pred_kp_y[:, 1:], target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 1], batch_index
+    #         )
+    #         reg_kp_z_loss = self.reg_loss_func(
+    #             pred_kp_z[:, 1:], target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 2], batch_index
+    #         )
+    #
+    #         loc_loss = (reg_loss * reg_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights'])).sum()
+    #         loc_loss = loc_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
+    #
+    #         reg_kp_vis_loss = (reg_kp_vis_loss * reg_kp_vis_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_code_weights'])).mean()
+    #         reg_kp_vis_loss = reg_kp_vis_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_weights']
+    #
+    #         bone_loss = bone_loss.mean() * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_weights']
+    #
+    #         reg_kp_x_loss = (reg_kp_x_loss * reg_kp_x_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_x_code_weights'])).sum()
+    #         reg_kp_x_loss = reg_kp_x_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_x_loc_weight']
+    #
+    #         reg_kp_y_loss = (reg_kp_y_loss * reg_kp_y_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_y_code_weights'])).sum()
+    #         reg_kp_y_loss = reg_kp_y_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_y_loc_weight']
+    #
+    #         reg_kp_z_loss = (reg_kp_z_loss * reg_kp_z_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_z_code_weights'])).sum()
+    #         reg_kp_z_loss = reg_kp_z_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_z_loc_weight']
+    #
+    #         reg_kp_loss = (reg_kp_x_loss + reg_kp_y_loss + reg_kp_z_loss) / 3
+    #
+    #         tb_dict['hm_loss_head_%d' % idx] = hm_loss.item()
+    #         tb_dict['loc_loss_head_%d' % idx] = loc_loss.item()
+    #         tb_dict['loc_kp_x_loss_head_%d' % idx] = reg_kp_x_loss.item()
+    #         tb_dict['loc_kp_y_loss_head_%d' % idx] = reg_kp_y_loss.item()
+    #         tb_dict['loc_kp_z_loss_head_%d' % idx] = reg_kp_z_loss.item()
+    #         tb_dict['loc_kp_all_loss_head_%d' % idx] = reg_kp_loss.item()
+    #         tb_dict['kp_vis_loss_head_%d' % idx] = reg_kp_vis_loss.item()
+    #         tb_dict['kp_bone_loss_head_%d' % idx] = bone_loss.item()
+    #
+    #         loss = bone_loss
+    #         if self.iou_branch:
+    #             batch_box_preds = self._get_predicted_boxes(pred_dict, spatial_indices)
+    #             pred_boxes_for_iou = batch_box_preds.detach()
+    #             iou_loss = self.crit_iou(pred_dict['iou'], target_dicts['masks'][idx], target_dicts['inds'][idx],
+    #                                         pred_boxes_for_iou, target_dicts['gt_boxes'][idx], batch_indices)
+    #
+    #             iou_reg_loss = self.crit_iou_reg(batch_box_preds, target_dicts['masks'][idx], target_dicts['inds'][idx],
+    #                                                 target_dicts['gt_boxes'][idx], batch_indices)
+    #             iou_weight = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['iou_weight'] if 'iou_weight' in self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS else self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
+    #             iou_reg_loss = iou_reg_loss * iou_weight  # self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
+    #
+    #             loss += (hm_loss + (loc_loss + reg_kp_loss) / 2 + reg_kp_vis_loss + iou_loss + iou_reg_loss)
+    #             tb_dict['iou_loss_head_%d' % idx] = iou_loss.item()
+    #             tb_dict['iou_reg_loss_head_%d' % idx] = iou_reg_loss.item()
+    #         else:
+    #             loss += hm_loss + (loc_loss + reg_kp_loss) / 2 + reg_kp_vis_loss
+    #
+    #     tb_dict['rpn_loss'] = loss.item()
+    #     return loss, tb_dict
 
     def _get_predicted_boxes(self, pred_dict, spatial_indices):
         center = pred_dict['center']
@@ -550,7 +771,24 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
 
     @staticmethod
     def reorder_rois_for_refining(batch_size, pred_dicts):
-        raise NotImplementedError
+        num_max_rois = max([len(cur_dict['pred_boxes']) for cur_dict in pred_dicts])
+        num_max_rois = max(1, num_max_rois)  # at least one faked rois to avoid error
+        pred_boxes = pred_dicts[0]['pred_boxes']
+        pred_kps = pred_dicts[0]['pred_kps']
+
+        rois = pred_boxes.new_zeros((batch_size, num_max_rois, pred_boxes.shape[-1]))
+        rois_kp = pred_boxes.new_zeros((batch_size, num_max_rois, pred_kps.shape[-2], pred_kps.shape[-1]))
+        roi_scores = pred_boxes.new_zeros((batch_size, num_max_rois))
+        roi_labels = pred_boxes.new_zeros((batch_size, num_max_rois)).long()
+
+        for bs_idx in range(batch_size):
+            num_boxes = len(pred_dicts[bs_idx]['pred_boxes'])
+
+            rois[bs_idx, :num_boxes, :] = pred_dicts[bs_idx]['pred_boxes']
+            rois_kp[bs_idx, :num_boxes, :, :] = pred_dicts[bs_idx]['pred_kps']
+            roi_scores[bs_idx, :num_boxes] = pred_dicts[bs_idx]['pred_scores']
+            roi_labels[bs_idx, :num_boxes] = pred_dicts[bs_idx]['pred_labels']
+        return rois, rois_kp, roi_scores, roi_labels
         num_max_rois = max([len(cur_dict['pred_boxes']) for cur_dict in pred_dicts])
         num_max_rois = max(1, num_max_rois)  # at least one faked rois to avoid error
         pred_boxes = pred_dicts[0]['pred_boxes']
@@ -586,6 +824,7 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
         return spatial_shape, batch_index, voxel_indices, spatial_indices, num_voxels
 
     def forward(self, data_dict):
+
         x = data_dict['encoded_spconv_tensor']
 
         spatial_shape, batch_index, voxel_indices, spatial_indices, num_voxels = self._get_voxel_infos(x)

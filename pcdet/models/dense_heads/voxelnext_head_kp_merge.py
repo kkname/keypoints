@@ -1,6 +1,8 @@
 from copy import deepcopy
 import torch
+from torch import nn
 from ..model_utils import model_nms_utils
+import spconv.pytorch as spconv
 
 from .voxelnext_head_kp import VoxelNeXtHeadKP, decode_bbox_and_keypoints_from_voxels_nuscenes
 
@@ -219,6 +221,12 @@ class VoxelNeXtHeadKPMerge(VoxelNeXtHeadKP):
         for head in self.heads_list:
             pred_dicts.append(head(x))
 
+        if self.training:
+            target_dict = self.assign_targets(
+                data_dict['gt_boxes'], data_dict['keypoint_location'], data_dict['keypoint_visibility'], num_voxels, spatial_indices, spatial_shape
+            )
+            self.forward_ret_dict['target_dicts'] = target_dict
+
         self.forward_ret_dict['pred_dicts'] = pred_dicts
         self.forward_ret_dict['voxel_indices'] = voxel_indices
 
@@ -233,6 +241,7 @@ class VoxelNeXtHeadKPMerge(VoxelNeXtHeadKP):
                 rois, rois_kp, roi_scores, roi_labels = self.reorder_rois_for_refining(data_dict['batch_size'], pred_dicts)
                 data_dict['rois'] = rois
                 data_dict['rois_kp'] = rois_kp
+                data_dict['roi_kps_vis'] = self._reorder_kp_vis_for_refining(data_dict['batch_size'], pred_dicts)
                 data_dict['roi_scores'] = roi_scores
                 data_dict['roi_labels'] = roi_labels
                 data_dict['has_class_labels'] = True
@@ -240,3 +249,15 @@ class VoxelNeXtHeadKPMerge(VoxelNeXtHeadKP):
                 data_dict['final_box_dicts'] = pred_dicts
 
         return data_dict
+
+    @staticmethod
+    def _reorder_kp_vis_for_refining(batch_size, pred_dicts):
+        num_max_rois = max([len(cur_dict['pred_boxes']) for cur_dict in pred_dicts])
+        num_max_rois = max(1, num_max_rois)
+        pred_kps_vis = pred_dicts[0]['pred_kps_vis']
+
+        roi_kps_vis = pred_kps_vis.new_zeros((batch_size, num_max_rois, pred_kps_vis.shape[-1]))
+        for bs_idx in range(batch_size):
+            num_boxes = len(pred_dicts[bs_idx]['pred_boxes'])
+            roi_kps_vis[bs_idx, :num_boxes] = pred_dicts[bs_idx]['pred_kps_vis']
+        return roi_kps_vis
