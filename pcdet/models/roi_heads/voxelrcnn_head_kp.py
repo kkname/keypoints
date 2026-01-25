@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ...utils import common_utils, keypoint_coder_utils, loss_utils
+from ...utils import common_utils, keypoint_coder_utils, loss_utils, loss_utils_kp
 from .voxelrcnn_head import VoxelRCNNHead
 
 
@@ -38,6 +38,20 @@ class VoxelRCNNHeadKP(VoxelRCNNHead):
         nn.init.normal_(self.kp_vis_pred_layer.weight, mean=0, std=0.001)
         nn.init.constant_(self.kp_vis_pred_layer.bias, 0)
 
+        self.kp_bone_weight = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS.get('rcnn_kp_bone_weight', 0.5)
+        self.kp_bone_half_visible_weight = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS.get(
+            'rcnn_kp_bone_half_visible_weight', 0.5
+        )
+        self.kp_bone_none_visible_weight = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS.get(
+            'rcnn_kp_bone_none_visible_weight', 0.1
+        )
+        self.kp_bone_loss_func = loss_utils_kp.BoneLoss(
+            [0, 1, 2, 3, 4, 7, 8, 9, 10, 13, 13, 1, 2],
+            [13, 3, 4, 5, 6, 9, 10, 11, 12, 1, 2, 7, 8],
+            half_visible_weight=self.kp_bone_half_visible_weight,
+            none_visible_weight=self.kp_bone_none_visible_weight
+        )
+
     def build_losses(self, losses_cfg):
         super().build_losses(losses_cfg)
         if losses_cfg.REG_LOSS_KP == 'smooth-l1':
@@ -55,7 +69,8 @@ class VoxelRCNNHeadKP(VoxelRCNNHead):
 
         reg_valid_mask = forward_ret_dict['reg_valid_mask'].view(-1)
         gt_kp3d_ct = forward_ret_dict['gt_of_kp'][..., 0:code_size]
-        kp_mask = forward_ret_dict["batch_gt_of_kp_mask"].view(-1, code_size // 3)
+        kp_valid = forward_ret_dict["batch_gt_of_kp_mask"].view(-1, code_size // 3)
+        gt_kp_vis = forward_ret_dict['batch_gt_of_kp_vis'].view(-1, code_size // 3)
         rcnn_reg_kp = forward_ret_dict['rcnn_reg_kp']
         roi_boxes3d = forward_ret_dict['rois']
         rcnn_batch_size = forward_ret_dict['gt_of_rois'][..., 0:box_code_size].view(-1, box_code_size).shape[0]
@@ -70,17 +85,105 @@ class VoxelRCNNHeadKP(VoxelRCNNHead):
             gt_kp3d_ct.view(rcnn_batch_size, code_size // 3, 3), rois_anchor
         )
 
-        kp_mask_expanded = kp_mask.unsqueeze(-1).repeat(1, 1, 3).view(rcnn_batch_size, -1)
-        rcnn_kp_loss_reg = self.reg_kp_loss_func(
-            (rcnn_reg_kp.view(rcnn_batch_size, -1) * kp_mask_expanded).unsqueeze(dim=0),
-            (reg_targets.view(rcnn_batch_size, -1) * kp_mask_expanded).unsqueeze(dim=0),
-        )
-        rcnn_kp_loss_reg = rcnn_kp_loss_reg.view(rcnn_batch_size, -1).sum(dim=-1)
-        rcnn_kp_loss_reg = (rcnn_kp_loss_reg * fg_mask.float()).sum() / max(fg_sum, 1)
-        rcnn_kp_loss_reg = rcnn_kp_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_kp_reg_weight']
+        num_kp = code_size // 3
+        pred_kp = rcnn_reg_kp.view(rcnn_batch_size, num_kp, 3)
+        target_kp = reg_targets.view(rcnn_batch_size, num_kp, 3)
+
+        vis = gt_kp_vis.float()
+        valid = kp_valid.float()
+        inv = (1.0 - gt_kp_vis.float()) * kp_valid.float()
+
+        beta_vis = loss_cfgs.LOSS_WEIGHTS.get('rcnn_kp_beta_visible', 0.2)
+        beta_inv = loss_cfgs.LOSS_WEIGHTS.get('rcnn_kp_beta_invisible', 1.0)
+        lam_inv = loss_cfgs.LOSS_WEIGHTS.get('rcnn_kp_lambda_invisible', 0.4)
+
+        fg = fg_mask.float().unsqueeze(-1).unsqueeze(-1)
+        loss_vis_elem = F.smooth_l1_loss(pred_kp, target_kp, reduction='none', beta=beta_vis) * fg * vis.unsqueeze(-1)
+        loss_inv_elem = F.smooth_l1_loss(pred_kp, target_kp, reduction='none', beta=beta_inv) * fg * inv.unsqueeze(-1)
+
+        denom_vis = (fg_mask.float().unsqueeze(-1) * vis).sum(dim=0).clamp(min=1.0)
+        denom_inv = (fg_mask.float().unsqueeze(-1) * inv).sum(dim=0).clamp(min=1.0)
+
+        loss_vis_vec = loss_vis_elem.sum(dim=(0, 2)) / denom_vis
+        loss_inv_vec = loss_inv_elem.sum(dim=(0, 2)) / denom_inv
+
+        weights = loss_vis_vec.new_tensor(loss_cfgs.LOSS_WEIGHTS['code_weights_kp']).view(num_kp, 3).mean(dim=-1)
+        loss_vis = (loss_vis_vec * weights).sum() / weights.sum().clamp(min=1e-6)
+        loss_inv = (loss_inv_vec * weights).sum() / weights.sum().clamp(min=1e-6)
+
+        rcnn_kp_loss_reg = (loss_vis + lam_inv * loss_inv) * loss_cfgs.LOSS_WEIGHTS['rcnn_kp_reg_weight']
 
         tb_dict = {'rcnn_kp_loss_reg': rcnn_kp_loss_reg.item()}
         return rcnn_kp_loss_reg, tb_dict
+
+    def get_kp_bone_loss(self, forward_ret_dict):
+        loss_cfgs = self.model_cfg.LOSS_CONFIG
+        code_size = self.kp_coder.code_size
+        box_code_size = self.box_coder.code_size
+
+        reg_valid_mask = forward_ret_dict['reg_valid_mask'].view(-1)
+        gt_kp3d_ct = forward_ret_dict['gt_of_kp'][..., 0:code_size]
+        gt_kp_vis = forward_ret_dict['batch_gt_of_kp_vis'].view(-1, code_size // 3)
+        kp_valid = forward_ret_dict["batch_gt_of_kp_mask"].view(-1, code_size // 3)
+        rcnn_reg_kp = forward_ret_dict['rcnn_reg_kp']
+        roi_boxes3d = forward_ret_dict['rois']
+        rcnn_batch_size = forward_ret_dict['gt_of_rois'][..., 0:box_code_size].view(-1, box_code_size).shape[0]
+
+        rois_anchor = roi_boxes3d.clone().detach().view(-1, box_code_size)
+        rois_anchor[:, 0:3] = 0
+        rois_anchor[:, 6] = 0
+        reg_targets = self.kp_coder.encode_torch(
+            gt_kp3d_ct.view(rcnn_batch_size, code_size // 3, 3), rois_anchor
+        )
+
+        num_kp = code_size // 3
+        pred_kp = rcnn_reg_kp.view(rcnn_batch_size, num_kp, 3)
+        target_kp = reg_targets.view(rcnn_batch_size, num_kp, 3)
+        vis = gt_kp_vis.float() * kp_valid.float()
+
+        fg_mask = (reg_valid_mask > 0).float()
+        if fg_mask.sum() == 0:
+            bone_loss = pred_kp.new_zeros(())
+        else:
+            bone_parents = pred_kp.new_tensor(self.kp_bone_loss_func.bone_joints_order, dtype=torch.long)
+            if self.kp_bone_loss_func.joints_order is None:
+                bone_children = torch.arange(pred_kp.size(1), device=pred_kp.device, dtype=torch.long)
+            else:
+                bone_children = pred_kp.new_tensor(self.kp_bone_loss_func.joints_order, dtype=torch.long)
+
+            pred_u = pred_kp[:, bone_children]
+            pred_v = pred_kp[:, bone_parents]
+            target_u = target_kp[:, bone_children]
+            target_v = target_kp[:, bone_parents]
+
+            vis_u = vis[:, bone_children]
+            vis_v = vis[:, bone_parents]
+            valid_u = valid[:, bone_children]
+            valid_v = valid[:, bone_parents]
+
+            edge_valid = valid_u * valid_v
+            both_vis = vis_u * vis_v
+            one_vis = ((vis_u + vis_v) == 1).float()
+            both_invis = ((vis_u == 0) & (vis_v == 0)).float()
+
+            edge_vis_weight = (
+                both_vis
+                + self.kp_bone_half_visible_weight * one_vis
+                + self.kp_bone_none_visible_weight * both_invis
+            )
+
+            edge_weight = fg_mask.unsqueeze(-1) * edge_valid * edge_vis_weight
+            if edge_weight.sum() == 0:
+                bone_loss = pred_kp.new_zeros(())
+            else:
+                bone_beta = loss_cfgs.LOSS_WEIGHTS.get('rcnn_kp_bone_beta', 1.0)
+                edge_loss = F.smooth_l1_loss(
+                    pred_u - pred_v, target_u - target_v, reduction='none', beta=bone_beta
+                ).mean(dim=-1)
+                bone_loss = (edge_loss * edge_weight).sum() / edge_weight.sum().clamp(min=1.0)
+                bone_loss = bone_loss * self.kp_bone_weight
+        tb_dict = {'rcnn_kp_bone_loss': bone_loss.item()}
+        return bone_loss, tb_dict
 
     def get_loss(self, tb_dict=None):
         rcnn_loss, tb_dict = super().get_loss(tb_dict=tb_dict)
@@ -90,6 +193,9 @@ class VoxelRCNNHeadKP(VoxelRCNNHead):
         rcnn_kp_vis_loss, vis_tb_dict = self.get_kp_vis_layer_loss(self.forward_ret_dict)
         rcnn_loss += rcnn_kp_vis_loss
         tb_dict.update(vis_tb_dict)
+        rcnn_kp_bone_loss, bone_tb_dict = self.get_kp_bone_loss(self.forward_ret_dict)
+        rcnn_loss += rcnn_kp_bone_loss
+        tb_dict.update(bone_tb_dict)
         tb_dict['rcnn_loss'] = rcnn_loss.item()
         return rcnn_loss, tb_dict
 
@@ -110,12 +216,12 @@ class VoxelRCNNHeadKP(VoxelRCNNHead):
         code_size = self.kp_coder.code_size
 
         reg_valid_mask = forward_ret_dict['reg_valid_mask'].view(-1)
-        kp_mask = forward_ret_dict["batch_gt_of_kp_mask"].view(-1, code_size // 3)
+        kp_valid = forward_ret_dict["batch_gt_of_kp_mask"].view(-1, code_size // 3)
         gt_kp_vis = forward_ret_dict['batch_gt_of_kp_vis'].view(-1, code_size // 3).float()
         rcnn_reg_kp_vis = forward_ret_dict['rcnn_reg_kp_vis'].view(-1, code_size // 3)
 
         fg_mask = (reg_valid_mask > 0).float()
-        vis_weights = fg_mask.unsqueeze(-1) * kp_mask.float()
+        vis_weights = fg_mask.unsqueeze(-1) * kp_valid.float()
 
         loss_raw = F.binary_cross_entropy_with_logits(rcnn_reg_kp_vis, gt_kp_vis, reduction='none')
         loss_raw = loss_raw * vis_weights

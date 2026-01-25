@@ -142,7 +142,7 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
         distances = ((voxel_indices - center.unsqueeze(0))**2).sum(-1)
         return distances
 
-    def assign_targets(self, gt_boxes, gt_kps, gt_kps_vis, num_voxels, spatial_indices, spatial_shape):
+    def assign_targets(self, gt_boxes, gt_kps, gt_kps_vis, num_voxels, spatial_indices, spatial_shape, gt_kps_valid=None):
         """
         Args:
             gt_boxes: (B, M, 8)
@@ -158,24 +158,29 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
             'target_boxes': [],
             'target_kps': [],
             'target_kps_vis': [],
+            'target_kps_valid': [],
             'inds': [],
             'masks': [],
             'heatmap_masks': [],
             'gt_boxes': []
         }
+        if gt_kps_valid is None:
+            gt_kps_valid = gt_kps_vis
 
         all_names = np.array(['bg', *self.class_names])
         for idx, cur_class_names in enumerate(self.class_names_each_head):
-            heatmap_list, target_boxes_list, target_kps_list, target_kps_vis_list, inds_list, masks_list, gt_boxes_list = [], [], [], [], [], [], []
+            heatmap_list, target_boxes_list, target_kps_list, target_kps_vis_list, target_kps_valid_list, inds_list, masks_list, gt_boxes_list = [], [], [], [], [], [], [], []
             for bs_idx in range(batch_size):
                 cur_gt_boxes = gt_boxes[bs_idx]
                 cur_gt_kps = gt_kps[bs_idx]
                 cur_gt_kps_vis = gt_kps_vis[bs_idx]
+                cur_gt_kps_valid = gt_kps_valid[bs_idx]
                 gt_class_names = all_names[cur_gt_boxes[:, -1].cpu().long().numpy()]
 
                 gt_boxes_single_head = []
                 kps_single_head = []
                 kps_vis_single_head = []
+                kps_valid_single_head = []
 
                 for class_idx, name in enumerate(gt_class_names):
                     if name not in cur_class_names:
@@ -186,15 +191,18 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
                     gt_boxes_single_head.append(temp_box[None, :])
                     kps_single_head.append(cur_gt_kps[class_idx][None, ...])
                     kps_vis_single_head.append(cur_gt_kps_vis[class_idx][None, ...])
+                    kps_valid_single_head.append(cur_gt_kps_valid[class_idx][None, ...])
 
                 if len(gt_boxes_single_head) == 0:
                     gt_boxes_single_head = cur_gt_boxes[:0, :]
                     kps_single_head = cur_gt_kps[:0, ...]
                     kps_vis_single_head = cur_gt_kps_vis[:0, ...]
+                    kps_valid_single_head = cur_gt_kps_valid[:0, ...]
                 else:
                     gt_boxes_single_head = torch.cat(gt_boxes_single_head, dim=0)
                     kps_single_head = torch.cat(kps_single_head, dim=0)
                     kps_vis_single_head = torch.cat(kps_vis_single_head, dim=0)
+                    kps_valid_single_head = torch.cat(kps_valid_single_head, dim=0)
 
                 # 在这里调用“专员”函数
                 heatmap, ret_boxes, ret_kps, inds, mask = self.assign_target_of_single_head(
@@ -215,6 +223,12 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
                 target_boxes_list.append(ret_boxes.to(gt_boxes_single_head.device))
                 target_kps_list.append(ret_kps[..., :3].to(gt_boxes_single_head.device))
                 target_kps_vis_list.append(ret_kps[..., 3].to(gt_boxes_single_head.device))
+                kp_valid_padded = kps_valid_single_head.new_zeros(
+                    (target_assigner_cfg.NUM_MAX_OBJS, kps_valid_single_head.shape[-1])
+                )
+                num_valid = min(target_assigner_cfg.NUM_MAX_OBJS, kps_valid_single_head.shape[0])
+                kp_valid_padded[:num_valid] = kps_valid_single_head[:num_valid]
+                target_kps_valid_list.append(kp_valid_padded.to(gt_boxes_single_head.device))
                 inds_list.append(inds.to(gt_boxes_single_head.device))
                 masks_list.append(mask.to(gt_boxes_single_head.device))
                 gt_boxes_list.append(gt_boxes_single_head[:, :-1])
@@ -223,6 +237,7 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
             ret_dict['target_boxes'].append(torch.stack(target_boxes_list, dim=0))
             ret_dict['target_kps'].append(torch.stack(target_kps_list, dim=0))
             ret_dict['target_kps_vis'].append(torch.stack(target_kps_vis_list, dim=0))
+            ret_dict['target_kps_valid'].append(torch.stack(target_kps_valid_list, dim=0))
             ret_dict['inds'].append(torch.stack(inds_list, dim=0))
             ret_dict['masks'].append(torch.stack(masks_list, dim=0))
             ret_dict['gt_boxes'].append(gt_boxes_list)
@@ -331,6 +346,11 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
             target_boxes = target_dicts['target_boxes'][idx]
             target_kps = target_dicts['target_kps'][idx]
             target_kps_vis = target_dicts['target_kps_vis'][idx]
+            target_kps_valid = target_dicts.get('target_kps_valid', None)
+            if target_kps_valid is None:
+                target_kps_valid = torch.ones_like(target_kps_vis)
+            else:
+                target_kps_valid = target_kps_valid[idx]
 
             # 1. 正确构建8维的预测框 (pred_boxes)
             center_offset = torch.cat([pred_dict["loc_x"][..., 0:1], pred_dict["loc_y"][..., 0:1]], dim=-1)
@@ -376,7 +396,8 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
                 pred_kp_x_for_loss, target_kps[..., 0],
                 target_dicts['masks'][idx], target_dicts['inds'][idx], batch_index,
                 target_kps_vis, w_x,
-                beta_visible=beta_vis, beta_invisible=beta_invis, lambda_invisible=lam_invis
+                beta_visible=beta_vis, beta_invisible=beta_invis, lambda_invisible=lam_invis,
+                valid_mask=target_kps_valid
             )
             kp_x_loss = kp_x_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_x_loc_weight']
 
@@ -384,7 +405,8 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
                 pred_kp_y_for_loss, target_kps[..., 1],
                 target_dicts['masks'][idx], target_dicts['inds'][idx], batch_index,
                 target_kps_vis, w_y,
-                beta_visible=beta_vis, beta_invisible=beta_invis, lambda_invisible=lam_invis
+                beta_visible=beta_vis, beta_invisible=beta_invis, lambda_invisible=lam_invis,
+                valid_mask=target_kps_valid
             )
             kp_y_loss = kp_y_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_y_loc_weight']
 
@@ -392,7 +414,8 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
                 pred_kp_z_for_loss, target_kps[..., 2],
                 target_dicts['masks'][idx], target_dicts['inds'][idx], batch_index,
                 target_kps_vis, w_z,
-                beta_visible=beta_vis, beta_invisible=beta_invis, lambda_invisible=lam_invis
+                beta_visible=beta_vis, beta_invisible=beta_invis, lambda_invisible=lam_invis,
+                valid_mask=target_kps_valid
             )
             kp_z_loss = kp_z_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_z_loc_weight']
 
@@ -418,8 +441,10 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
             obj = target_dicts['masks'][idx].float().unsqueeze(-1)
             tgt_vis = target_kps_vis.float()
             bce = F.binary_cross_entropy_with_logits(pred_vis, tgt_vis, reduction='none')
-            denom = (obj * torch.ones_like(tgt_vis)).sum().clamp(min=1.0)
-            kp_vis_loss = (bce * obj).sum() / denom
+            valid = target_kps_valid.float()
+            weight = obj * valid
+            denom = weight.sum().clamp(min=1.0)
+            kp_vis_loss = (bce * weight).sum() / denom
             kp_vis_w = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS.get(
                 'kp_vis_weight', self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_weights']
             )
@@ -860,7 +885,9 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
 
         if self.training:
             target_dict = self.assign_targets(
-                data_dict['gt_boxes'], data_dict['keypoint_location'], data_dict['keypoint_visibility'], num_voxels, spatial_indices, spatial_shape
+                data_dict['gt_boxes'], data_dict['keypoint_location'], data_dict['keypoint_visibility'],
+                num_voxels, spatial_indices, spatial_shape,
+                data_dict.get('keypoint_mask', None)
             )
             self.forward_ret_dict['target_dicts'] = target_dict
 

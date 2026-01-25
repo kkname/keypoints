@@ -60,16 +60,16 @@ MODEL:
                 'loc_weight': 2.0,
                 'code_weights': [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
                 'kp_x_code_weights': [
-                    1.0, 1.0, 1.0, 1.0, 1.0, 5.0, 5.0,
-                    1.0, 1.0, 1.0, 1.0, 5.0, 5.0, 1.0,
+                    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+                    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
                 ],
                 'kp_y_code_weights': [
-                    1.0, 1.0, 1.0, 1.0, 1.0, 5.0, 5.0,
-                    1.0, 1.0, 1.0, 1.0, 5.0, 5.0, 1.0,
+                    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+                    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
                 ],
                 'kp_z_code_weights': [
-                    1.0, 1.0, 1.0, 1.0, 1.0, 3.0, 3.0,
-                    1.0, 1.0, 1.0, 1.0, 3.0, 3.0, 1.0,
+                    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+                    1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
                 ],
                 # Since the sum operation of the loss
                 'kp_x_loc_weight': 2,
@@ -80,6 +80,11 @@ MODEL:
                     1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
                 ],
                 'kp_visibility_weights': 1,
+                'kp_beta_visible': 0.2,
+                'kp_beta_invisible': 1.0,
+                'kp_lambda_invisible': 0.4,
+                'kp_bone_weight': 0.5,
+                'kp_vis_weight': 1.0,
             }
 
         POST_PROCESSING:
@@ -156,6 +161,13 @@ MODEL:
                 rcnn_reg_weight: 1.0
                 rcnn_kp_reg_weight: 1.0
                 rcnn_kp_vis_weight: 1.0
+                rcnn_kp_beta_visible: 0.2
+                rcnn_kp_beta_invisible: 1.0
+                rcnn_kp_lambda_invisible: 0.4
+                rcnn_kp_bone_weight: 0.5
+                rcnn_kp_bone_half_visible_weight: 0.5
+                rcnn_kp_bone_none_visible_weight: 0.1
+                rcnn_kp_bone_beta: 1.0
                 code_weights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
                 code_weights_kp: [
                     1.0, 1.0, 1.0, 1.0, 1.0, 1.0,

@@ -241,14 +241,14 @@ class BoneLoss(nn.Module):
                 none = ((v1 + v2) == 0).float()
                 mask = both + self.half_visible_weight * one + self.none_visible_weight * none
         else:
-            mask = 1.0
+            mask = output.new_ones((output.size(0), len(joints_order)))
 
         output_bone = torch.norm(
-            output[:, joints_order] - output[:, self.bone_joints_order], dim=-1) * mask
+            output[:, joints_order] - output[:, self.bone_joints_order], dim=-1)
         target_bone = torch.norm(
-            target[:, joints_order] - target[:, self.bone_joints_order], dim=-1) * mask
+            target[:, joints_order] - target[:, self.bone_joints_order], dim=-1)
 
-        return output_bone, target_bone
+        return output_bone, target_bone, mask
 
     def forward(self, output, target, visibility=None):
         """Forward function.
@@ -264,9 +264,12 @@ class BoneLoss(nn.Module):
             target_weight (torch.Tensor[N, K-1]):
                 Weights across different bone types.
         """
-        output_bone, target_bone = self.get_bone_size(output, target, visibility)
+        output_bone, target_bone, mask = self.get_bone_size(output, target, visibility)
+        denom = mask.sum(dim=0).clamp(min=1.0)
+        output_mean = (output_bone * mask).sum(dim=0) / denom
+        target_mean = (target_bone * mask).sum(dim=0) / denom
 
-        loss = torch.abs(output_bone.mean(dim=0) - target_bone.mean(dim=0))
+        loss = torch.abs(output_mean - target_mean)
 
         return loss
 
@@ -477,10 +480,13 @@ class SkeletonLoss(nn.Module):
         """
 
         pred, target, vis = self.preproc(output, mask, visibility, ind, target, batch_index)
-        output_bone, target_bone = self.bone_loss.get_bone_size(pred, target, vis)
+        output_bone, target_bone, bone_mask = self.bone_loss.get_bone_size(pred, target, vis)
         output_angle, target_angle = self.get_yaw_pitch_roll_size(pred, target, vis)
 
-        return self._huber(output_bone, target_bone) + self._huber(output_angle, target_angle) * 0.1
+        denom = bone_mask.sum(dim=0).clamp(min=1.0)
+        output_mean = (output_bone * bone_mask).sum(dim=0) / denom
+        target_mean = (target_bone * bone_mask).sum(dim=0) / denom
+        return self._huber(output_mean, target_mean) + self._huber(output_angle, target_angle) * 0.1
 
 
 def _gather_sparse(output, ind, batch_index, batch_size):
@@ -506,6 +512,7 @@ def kp_axis_vis_split_smoothl1_sparse(
     beta_visible: float = 0.2,
     beta_invisible: float = 1.0,
     lambda_invisible: float = 0.4,
+    valid_mask=None,
 ):
     """
     Args:
@@ -524,7 +531,12 @@ def kp_axis_vis_split_smoothl1_sparse(
 
     obj = mask_obj.float().unsqueeze(-1)
     vis = vis_mask.float()
-    inv = 1.0 - vis
+    if valid_mask is None:
+        valid = torch.ones_like(vis)
+    else:
+        valid = valid_mask.float()
+    vis = vis * valid
+    inv = (1.0 - vis_mask.float()) * valid
 
     loss_vis_elem = F.smooth_l1_loss(pred, target_axis, reduction="none", beta=beta_visible) * obj * vis
     loss_inv_elem = F.smooth_l1_loss(pred, target_axis, reduction="none", beta=beta_invisible) * obj * inv

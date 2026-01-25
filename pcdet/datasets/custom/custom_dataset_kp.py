@@ -142,8 +142,10 @@ class CustomDatasetKP(DatasetTemplate):
                 # 修正键名以匹配collate_batch的要求
                 input_dict['keypoint_location'] = annos['keypoints'].reshape(-1, self.num_keypoints, 3)
                 input_dict['keypoint_visibility'] = annos['keypoints_visible'].reshape(-1, self.num_keypoints)
-                # 提供data_augmentor需要的keypoint_mask
-                input_dict['keypoint_mask'] = annos['keypoints_visible'].reshape(-1, self.num_keypoints)
+                # keypoint_mask 表示坐标是否有效（当前数据全 1）
+                input_dict['keypoint_mask'] = np.ones_like(
+                    input_dict['keypoint_visibility'], dtype=np.float32
+                )
 
         # 调用父类的prepare_data进行数据增强和处理
         data_dict = self.prepare_data(data_dict=input_dict)
