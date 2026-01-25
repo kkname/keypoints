@@ -418,7 +418,8 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
             obj = target_dicts['masks'][idx].float().unsqueeze(-1)
             tgt_vis = target_kps_vis.float()
             bce = F.binary_cross_entropy_with_logits(pred_vis, tgt_vis, reduction='none')
-            kp_vis_loss = (bce * obj).sum() / obj.sum().clamp(min=1.0)
+            denom = (obj * torch.ones_like(tgt_vis)).sum().clamp(min=1.0)
+            kp_vis_loss = (bce * obj).sum() / denom
             kp_vis_w = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS.get(
                 'kp_vis_weight', self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_weights']
             )
@@ -433,7 +434,7 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
             tb_dict['kp_vis_loss_head_%d' % idx] = kp_vis_loss.item()
             tb_dict['kp_bone_loss_head_%d' % idx] = bone_loss.item()
 
-            loss = bone_loss
+            cur_loss = hm_loss + loc_loss + reg_kp_loss + kp_vis_loss + bone_loss
             if self.iou_branch:
                 batch_box_preds = self._get_predicted_boxes(pred_dict, spatial_indices)
                 pred_boxes_for_iou = batch_box_preds.detach()
@@ -447,12 +448,13 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
                 self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
                 iou_reg_loss = iou_reg_loss * iou_weight
 
-                loss += (hm_loss + loc_loss + reg_kp_loss + kp_vis_loss + iou_loss + iou_reg_loss)
+                cur_loss = cur_loss + iou_loss + iou_reg_loss
                 tb_dict['iou_loss_head_%d' % idx] = iou_loss.item()
                 tb_dict['iou_reg_loss_head_%d' % idx] = iou_reg_loss.item()
             else:
-                loss += hm_loss + loc_loss + reg_kp_loss + kp_vis_loss
+                cur_loss = cur_loss
 
+            loss += cur_loss
         tb_dict['rpn_loss'] = loss.item()
         return loss, tb_dict
 

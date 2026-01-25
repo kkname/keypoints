@@ -381,6 +381,33 @@ class FocalLossCenterNet(nn.Module):
         return self.neg_loss(out, target, mask=mask)
 
 
+def _reg_loss_l1(regr, gt_regr, mask):
+    """
+    Refer to https://github.com/tianweiy/CenterPoint
+    L1 regression loss
+    Args:
+        regr (batch x max_objects x dim)
+        gt_regr (batch x max_objects x dim)
+        mask (batch x max_objects)
+    Returns:
+        (dim,)
+    """
+    num = mask.float().sum()
+    mask = mask.unsqueeze(2).expand_as(gt_regr).float()
+    isnotnan = (~ torch.isnan(gt_regr)).float()
+    mask *= isnotnan
+    regr = regr * mask
+    gt_regr = gt_regr * mask
+
+    loss = torch.abs(regr - gt_regr)
+    loss = loss.transpose(2, 0)
+
+    loss = torch.sum(loss, dim=2)
+    loss = torch.sum(loss, dim=1)
+    loss = loss / torch.clamp_min(num, min=1.0)
+    return loss
+
+
 def _reg_loss(regr, gt_regr, mask, beta: float = 1.0):
     """
     Refer to https://github.com/tianweiy/CenterPoint
@@ -501,7 +528,7 @@ class RegLossSparse(nn.Module):
             pred.append(output[batch_inds][ind[bs_idx]])
         pred = torch.stack(pred)
 
-        loss = _reg_loss(pred, target, mask)
+        loss = _reg_loss_l1(pred, target, mask)
         return loss
 
 
