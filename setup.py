@@ -31,7 +31,8 @@ def write_version_to_file(version, target_file):
 
 if __name__ == '__main__':
     version = '0.6.0+%s' % get_git_commit_number()
-    write_version_to_file(version, '/home/yizhi/model/VoxelKP/pcdet/version.py')
+    target_file = os.path.join(os.path.dirname(__file__), 'pcdet', 'version.py')
+    write_version_to_file(version, target_file)
 
     setup(
         name='pcdet',

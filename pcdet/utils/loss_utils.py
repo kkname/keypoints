@@ -381,15 +381,16 @@ class FocalLossCenterNet(nn.Module):
         return self.neg_loss(out, target, mask=mask)
 
 
-def _reg_loss(regr, gt_regr, mask):
+def _reg_loss(regr, gt_regr, mask, beta: float = 1.0):
     """
     Refer to https://github.com/tianweiy/CenterPoint
-    L1 regression loss
+    Huber(SmoothL1) regression loss
     Args:
         regr (batch x max_objects x dim)
         gt_regr (batch x max_objects x dim)
         mask (batch x max_objects)
     Returns:
+        (dim,)
     """
     num = mask.float().sum()
     mask = mask.unsqueeze(2).expand_as(gt_regr).float()
@@ -398,18 +399,13 @@ def _reg_loss(regr, gt_regr, mask):
     regr = regr * mask
     gt_regr = gt_regr * mask
 
-    loss = torch.abs(regr - gt_regr)
+    diff = (regr - gt_regr).abs()
+    loss = torch.where(diff < beta, 0.5 * diff * diff / beta, diff - 0.5 * beta)
     loss = loss.transpose(2, 0)
 
     loss = torch.sum(loss, dim=2)
     loss = torch.sum(loss, dim=1)
-    # else:
-    #  # D x M x B
-    #  loss = loss.reshape(loss.shape[0], -1)
-
-    # loss = loss / (num + 1e-4)
     loss = loss / torch.clamp_min(num, min=1.0)
-    # import pdb; pdb.set_trace()
     return loss
 
 

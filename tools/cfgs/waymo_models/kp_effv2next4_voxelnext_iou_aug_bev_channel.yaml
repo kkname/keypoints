@@ -140,6 +140,7 @@ MODEL:
             CLS_FG_THRESH: 0.75
             CLS_BG_THRESH: 0.25
             CLS_BG_THRESH_LO: 0.1
+            HARD_BG_RATIO: 0.8
             REG_FG_THRESH: 0.55
             KEYPOINT_CODER: RegressionCoderKP
             KEYPOINT_CODER_CONFIG:
@@ -163,7 +164,7 @@ MODEL:
                     1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
                     1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
                     1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-                    1.0, 1.0, 1.0, 1.0
+                    1.0, 1.0, 1.0, 1.0, 1.0, 1.0
                 ]
 
         NMS_CONFIG:
@@ -181,6 +182,14 @@ MODEL:
                 NMS_POST_MAXSIZE: 100
 
     POST_PROCESSING:
+        SCORE_THRESH: 0.3
+        OUTPUT_RAW_SCORE: False
+        NMS_CONFIG:
+            MULTI_CLASSES_NMS: False
+            NMS_TYPE: nms_gpu
+            NMS_THRESH: 0.8
+            NMS_PRE_MAXSIZE: 1000
+            NMS_POST_MAXSIZE: 100
         RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
 
         EVAL_METRIC: custom_kp

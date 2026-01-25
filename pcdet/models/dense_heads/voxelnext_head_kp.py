@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.init import kaiming_normal_
 from ..model_utils import centernet_utils
 from ..model_utils import model_nms_utils
@@ -358,58 +359,78 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
             # 骨骼损失 (使用切片后的14维 pred_kp_*_for_loss)
             bone_loss = self.bone_loss_func(
                 torch.stack([pred_kp_x_for_loss, pred_kp_y_for_loss, pred_kp_z_for_loss], dim=-1),
-                target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps, batch_index
+                target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps, batch_index,
+                visibility=target_kps_vis
             )
 
-            # 可见性损失 (pred_kp_vis 本身就是14维，无需切片)
-            reg_kp_vis_loss = self.reg_loss_func(
-                pred_kp_vis, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps_vis, batch_index
-            )
+            # 关键点坐标回归损失 (可见/不可见分流)
+            w_x = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_x_code_weights']
+            w_y = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_y_code_weights']
+            w_z = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_z_code_weights']
 
-            # 关键点坐标回归损失 (同样使用切片后的14维 pred_kp_*_for_loss)
-            reg_kp_x_loss = self.reg_loss_func(
-                pred_kp_x_for_loss, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 0],
-                batch_index
+            beta_vis = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS.get('kp_beta_visible', 0.2)
+            beta_invis = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS.get('kp_beta_invisible', 1.0)
+            lam_invis = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS.get('kp_lambda_invisible', 0.4)
+
+            kp_x_loss, kp_x_vis_vec, kp_x_inv_vec = loss_utils_kp.kp_axis_vis_split_smoothl1_sparse(
+                pred_kp_x_for_loss, target_kps[..., 0],
+                target_dicts['masks'][idx], target_dicts['inds'][idx], batch_index,
+                target_kps_vis, w_x,
+                beta_visible=beta_vis, beta_invisible=beta_invis, lambda_invisible=lam_invis
             )
-            reg_kp_y_loss = self.reg_loss_func(
-                pred_kp_y_for_loss, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 1],
-                batch_index
+            kp_x_loss = kp_x_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_x_loc_weight']
+
+            kp_y_loss, kp_y_vis_vec, kp_y_inv_vec = loss_utils_kp.kp_axis_vis_split_smoothl1_sparse(
+                pred_kp_y_for_loss, target_kps[..., 1],
+                target_dicts['masks'][idx], target_dicts['inds'][idx], batch_index,
+                target_kps_vis, w_y,
+                beta_visible=beta_vis, beta_invisible=beta_invis, lambda_invisible=lam_invis
             )
-            reg_kp_z_loss = self.reg_loss_func(
-                pred_kp_z_for_loss, target_dicts['masks'][idx], target_dicts['inds'][idx], target_kps[..., 2],
-                batch_index
+            kp_y_loss = kp_y_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_y_loc_weight']
+
+            kp_z_loss, kp_z_vis_vec, kp_z_inv_vec = loss_utils_kp.kp_axis_vis_split_smoothl1_sparse(
+                pred_kp_z_for_loss, target_kps[..., 2],
+                target_dicts['masks'][idx], target_dicts['inds'][idx], batch_index,
+                target_kps_vis, w_z,
+                beta_visible=beta_vis, beta_invisible=beta_invis, lambda_invisible=lam_invis
             )
+            kp_z_loss = kp_z_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_z_loc_weight']
 
             loc_loss = (reg_loss * reg_loss.new_tensor(self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['code_weights'])).sum()
             loc_loss = loc_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
 
-            reg_kp_vis_loss = (reg_kp_vis_loss * reg_kp_vis_loss.new_tensor(
-                self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_code_weights'])).mean()
-            reg_kp_vis_loss = reg_kp_vis_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_weights']
+            bone_w = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS.get(
+                'kp_bone_weight', self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_weights']
+            )
+            bone_loss = bone_loss.mean() * bone_w
 
-            bone_loss = bone_loss.mean() * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_weights']
+            reg_kp_loss = (kp_x_loss + kp_y_loss + kp_z_loss) / 3.0
 
-            reg_kp_x_loss = (reg_kp_x_loss * reg_kp_x_loss.new_tensor(
-                self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_x_code_weights'])).sum()
-            reg_kp_x_loss = reg_kp_x_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_x_loc_weight']
+            # 可见性损失 (BCEWithLogits)
+            batch_size = target_dicts['masks'][idx].shape[0]
+            pred_vis_list = []
+            inds = target_dicts['inds'][idx]
+            for bs_idx in range(batch_size):
+                batch_inds = (batch_index == bs_idx)
+                pred_vis_list.append(pred_kp_vis[batch_inds][inds[bs_idx]])
+            pred_vis = torch.stack(pred_vis_list, dim=0)
 
-            reg_kp_y_loss = (reg_kp_y_loss * reg_kp_y_loss.new_tensor(
-                self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_y_code_weights'])).sum()
-            reg_kp_y_loss = reg_kp_y_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_y_loc_weight']
-
-            reg_kp_z_loss = (reg_kp_z_loss * reg_kp_z_loss.new_tensor(
-                self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_z_code_weights'])).sum()
-            reg_kp_z_loss = reg_kp_z_loss * self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_z_loc_weight']
-
-            reg_kp_loss = (reg_kp_x_loss + reg_kp_y_loss + reg_kp_z_loss) / 3
+            obj = target_dicts['masks'][idx].float().unsqueeze(-1)
+            tgt_vis = target_kps_vis.float()
+            bce = F.binary_cross_entropy_with_logits(pred_vis, tgt_vis, reduction='none')
+            kp_vis_loss = (bce * obj).sum() / obj.sum().clamp(min=1.0)
+            kp_vis_w = self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS.get(
+                'kp_vis_weight', self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['kp_visibility_weights']
+            )
+            kp_vis_loss = kp_vis_loss * kp_vis_w
 
             tb_dict['hm_loss_head_%d' % idx] = hm_loss.item()
             tb_dict['loc_loss_head_%d' % idx] = loc_loss.item()
-            tb_dict['loc_kp_x_loss_head_%d' % idx] = reg_kp_x_loss.item()
-            tb_dict['loc_kp_y_loss_head_%d' % idx] = reg_kp_y_loss.item()
-            tb_dict['loc_kp_z_loss_head_%d' % idx] = reg_kp_z_loss.item()
+            tb_dict['loc_kp_x_loss_head_%d' % idx] = kp_x_loss.item()
+            tb_dict['loc_kp_y_loss_head_%d' % idx] = kp_y_loss.item()
+            tb_dict['loc_kp_z_loss_head_%d' % idx] = kp_z_loss.item()
             tb_dict['loc_kp_all_loss_head_%d' % idx] = reg_kp_loss.item()
-            tb_dict['kp_vis_loss_head_%d' % idx] = reg_kp_vis_loss.item()
+            tb_dict['kp_vis_loss_head_%d' % idx] = kp_vis_loss.item()
             tb_dict['kp_bone_loss_head_%d' % idx] = bone_loss.item()
 
             loss = bone_loss
@@ -426,11 +447,11 @@ class VoxelNeXtHeadKP(VoxelNeXtHead):
                 self.model_cfg.LOSS_CONFIG.LOSS_WEIGHTS['loc_weight']
                 iou_reg_loss = iou_reg_loss * iou_weight
 
-                loss += (hm_loss + (loc_loss + reg_kp_loss) / 2 + reg_kp_vis_loss + iou_loss + iou_reg_loss)
+                loss += (hm_loss + loc_loss + reg_kp_loss + kp_vis_loss + iou_loss + iou_reg_loss)
                 tb_dict['iou_loss_head_%d' % idx] = iou_loss.item()
                 tb_dict['iou_reg_loss_head_%d' % idx] = iou_reg_loss.item()
             else:
-                loss += hm_loss + (loc_loss + reg_kp_loss) / 2 + reg_kp_vis_loss
+                loss += hm_loss + loc_loss + reg_kp_loss + kp_vis_loss
 
         tb_dict['rpn_loss'] = loss.item()
         return loss, tb_dict

@@ -71,6 +71,7 @@ def parse_config():
                         help='specify the point cloud data file or directory')
     parser.add_argument('--ckpt', type=str, default=None, help='specify the pretrained model')
     parser.add_argument('--ext', type=str, default='.bin', help='specify the extension of your point cloud data file')
+    parser.add_argument('--no_vis', action='store_true', help='disable visualization (headless)')
 
     args = parser.parse_args()
 
@@ -107,16 +108,17 @@ def main():
             pred_kps = pred_dicts[0].get('pred_kps', None)
 
             # 调用我们升级后的可视化函数，并传入关键点
-            V.draw_scenes(
-                points=data_dict['points'][:, 1:],
-                ref_boxes=pred_dicts[0]['pred_boxes'],
-                ref_scores=pred_dicts[0]['pred_scores'],
-                ref_labels=pred_dicts[0]['pred_labels'],
-                ref_keypoints=pred_kps  # <-- 关键新增：将关键点数据传递给可视化函数
-            )
+            if not args.no_vis:
+                V.draw_scenes(
+                    points=data_dict['points'][:, 1:],
+                    ref_boxes=pred_dicts[0]['pred_boxes'],
+                    ref_scores=pred_dicts[0]['pred_scores'],
+                    ref_labels=pred_dicts[0]['pred_labels'],
+                    ref_keypoints=pred_kps  # <-- 关键新增：将关键点数据传递给可视化函数
+                )
 
-            if not OPEN3D_FLAG:
-                mlab.show(stop=True)
+                if not OPEN3D_FLAG:
+                    mlab.show(stop=True)
 
             # 修复变量赋值错误（移除多余的逗号，避免元组类型）
             ref_boxes = pred_dicts[0]['pred_boxes']  # 移除逗号

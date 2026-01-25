@@ -199,10 +199,13 @@ class BoneLoss(nn.Module):
             Joints not in the list will be excluded.
     """
 
-    def __init__(self, bone_joints_order: List[int], joints_order: List[int] = None):
+    def __init__(self, bone_joints_order: List[int], joints_order: List[int] = None,
+                 half_visible_weight: float = 0.5, none_visible_weight: float = 0.0):
         super().__init__()
         self.bone_joints_order = bone_joints_order
         self.joints_order = joints_order
+        self.half_visible_weight = half_visible_weight
+        self.none_visible_weight = none_visible_weight
         # self._huber = nn.HuberLoss()
 
         if joints_order is not None and len(joints_order) != len(bone_joints_order):
@@ -228,12 +231,17 @@ class BoneLoss(nn.Module):
         else:
             joints_order = self.joints_order
 
-        # Get mask for valid pairs where both x and y are valid
+        # Get mask for valid pairs using visibility
         if visibility is not None:
             with torch.no_grad():
-                mask = ((visibility[:, joints_order] > 0) & (visibility[:, self.bone_joints_order] > 0)).float()
+                v1 = (visibility[:, joints_order] > 0).float()
+                v2 = (visibility[:, self.bone_joints_order] > 0).float()
+                both = v1 * v2
+                one = ((v1 + v2) == 1).float()
+                none = ((v1 + v2) == 0).float()
+                mask = both + self.half_visible_weight * one + self.none_visible_weight * none
         else:
-            mask = 1.
+            mask = 1.0
 
         output_bone = torch.norm(
             output[:, joints_order] - output[:, self.bone_joints_order], dim=-1) * mask
@@ -267,9 +275,10 @@ class BoneLossCenterNet(nn.Module):
     """BoneLoss for centerNet outputs.
     """
 
-    def __init__(self, bone_joints_order: List[int], joints_order: List[int] = None):
+    def __init__(self, bone_joints_order: List[int], joints_order: List[int] = None,
+                 half_visible_weight: float = 0.5, none_visible_weight: float = 0.0):
         super(BoneLossCenterNet, self).__init__()
-        self.bone_loss = BoneLoss(bone_joints_order, joints_order)
+        self.bone_loss = BoneLoss(bone_joints_order, joints_order, half_visible_weight, none_visible_weight)
 
     def forward(self, output, mask, ind=None, target=None, batch_index=None, visibility=None):
         dim_size = output.size(1)
@@ -472,3 +481,63 @@ class SkeletonLoss(nn.Module):
         output_angle, target_angle = self.get_yaw_pitch_roll_size(pred, target, vis)
 
         return self._huber(output_bone, target_bone) + self._huber(output_angle, target_angle) * 0.1
+
+
+def _gather_sparse(output, ind, batch_index, batch_size):
+    pred = []
+    for bs_idx in range(batch_size):
+        batch_inds = (batch_index == bs_idx)
+        pred.append(output[batch_inds][ind[bs_idx]])
+    return torch.stack(pred, dim=0)
+
+
+def _weighted_mean(vec, weights, eps=1e-6):
+    return (vec * weights).sum() / (weights.sum() + eps)
+
+
+def kp_axis_vis_split_smoothl1_sparse(
+    output_axis,
+    target_axis,
+    mask_obj,
+    ind,
+    batch_index,
+    vis_mask,
+    code_weights,
+    beta_visible: float = 0.2,
+    beta_invisible: float = 1.0,
+    lambda_invisible: float = 0.4,
+):
+    """
+    Args:
+        output_axis: (N, K)
+        target_axis: (B, M, K)
+        mask_obj: (B, M)
+        ind: (B, M)
+        batch_index: (N,)
+        vis_mask: (B, M, K)
+        code_weights: (K,)
+    Returns:
+        loss, loss_vis_vec, loss_inv_vec
+    """
+    batch_size = mask_obj.shape[0]
+    pred = _gather_sparse(output_axis, ind, batch_index, batch_size)
+
+    obj = mask_obj.float().unsqueeze(-1)
+    vis = vis_mask.float()
+    inv = 1.0 - vis
+
+    loss_vis_elem = F.smooth_l1_loss(pred, target_axis, reduction="none", beta=beta_visible) * obj * vis
+    loss_inv_elem = F.smooth_l1_loss(pred, target_axis, reduction="none", beta=beta_invisible) * obj * inv
+
+    denom_vis = (obj * vis).sum(dim=(0, 1)).clamp(min=1.0)
+    denom_inv = (obj * inv).sum(dim=(0, 1)).clamp(min=1.0)
+
+    loss_vis_vec = loss_vis_elem.sum(dim=(0, 1)) / denom_vis
+    loss_inv_vec = loss_inv_elem.sum(dim=(0, 1)) / denom_inv
+
+    weights = pred.new_tensor(code_weights).float()
+    loss_vis = _weighted_mean(loss_vis_vec, weights)
+    loss_inv = _weighted_mean(loss_inv_vec, weights)
+
+    loss = loss_vis + lambda_invisible * loss_inv
+    return loss, loss_vis_vec, loss_inv_vec
